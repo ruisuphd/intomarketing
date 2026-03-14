@@ -14,6 +14,7 @@ from shared.entitlements import is_internal_test_email, normalize_email
 from shared.firestore_client import update_tenant
 from shared.logger import get_logger
 from shared.platforms import normalize_platforms
+from shared.redis_client import cache_delete_pattern
 from shared.upload_validation import validate_upload
 
 logger = get_logger("api.onboarding")
@@ -78,6 +79,7 @@ async def create_tenant_endpoint(
         updates["is_internal"] = True
 
     update_tenant(tenant.tenant_id, updates)
+    cache_delete_pattern(f"tenant:uid:{tenant.owner_uid}*")
     logger.info(
         "onboarding.tenant_profile_updated", extra={"tenant_id": tenant.tenant_id}
     )
@@ -92,6 +94,7 @@ async def complete_onboarding(
     tenant=Depends(require_access("starter", "pro")),
 ):
     update_tenant(tenant.tenant_id, {"onboarding_completed": True})
+    cache_delete_pattern(f"tenant:uid:{tenant.owner_uid}*")
 
     from pipeline import _run_pipeline
 
