@@ -1,8 +1,26 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { getSiteUrl } from "@/lib/site-url";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy",
+  description:
+    "How IntoMarketing collects, uses, and protects personal data (GDPR, CCPA, PDPA).",
+  alternates: {
+    canonical: "/privacy",
+  },
+  openGraph: {
+    url: `${getSiteUrl()}/privacy`,
+  },
+};
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-3xl px-6 py-16">
-        <a href="/" className="text-sm text-blue-600 hover:underline">← Back to IntoMarketing</a>
+        <Link href="/" className="text-sm text-blue-600 hover:underline">
+          ← Back to IntoMarketing
+        </Link>
         <h1 className="mt-8 text-3xl font-bold">Privacy Policy</h1>
         <p className="mt-2 text-sm text-gray-500">Effective: March 17, 2026</p>
         <div className="prose prose-gray mt-8 max-w-none">
@@ -401,7 +419,97 @@ export default function PrivacyPage() {
             will respond within 45 days, with an extension of up to 90 days where reasonably necessary.
           </p>
 
-          <h2>15. Contact Us</h2>
+          <h2>15. Singapore PDPA Addendum</h2>
+          <p>
+            This section provides additional disclosures specifically for individuals whose personal data
+            is processed subject to the Singapore Personal Data Protection Act 2012 (PDPA), as amended by
+            the Personal Data Protection (Amendment) Act 2020.
+          </p>
+
+          <h3>Data Controller</h3>
+          <p>
+            The data controller responsible for your personal data under the PDPA is{" "}
+            <strong>Intonation Labs Pte. Ltd.</strong>, a company incorporated in Singapore.
+            Our Data Protection Officer (DPO) can be contacted at{" "}
+            <a href="mailto:privacy@intonationlabs.com">privacy@intonationlabs.com</a>.
+          </p>
+
+          <h3>Purpose Limitation</h3>
+          <p>
+            We collect, use, and disclose personal data only for the purposes set out in this Privacy
+            Policy, or for purposes directly related thereto. We will notify you of any new purpose
+            before using your data for it, unless an exception under the PDPA applies.
+          </p>
+
+          <h3>Data Residency</h3>
+          <p>
+            Your personal data is primarily processed and stored on Google Cloud Platform in the{" "}
+            <strong>asia-southeast1 (Singapore)</strong> region. Where data is processed outside
+            Singapore (for example, by Stripe or Sentry), we ensure comparable protection is in place
+            through contractual arrangements consistent with the PDPA transfer obligations.
+          </p>
+
+          <h3>Mandatory Data Breach Notification</h3>
+          <p>
+            Under the PDPA, we are required to notify the Personal Data Protection Commission (PDPC)
+            and affected individuals of any notifiable data breach. A notifiable breach is one that
+            results in, or is likely to result in, significant harm to affected individuals or involves
+            personal data of 500 or more individuals. We will notify the PDPC within{" "}
+            <strong>3 calendar days</strong> of assessing that a notifiable breach has occurred, and
+            notify affected individuals as soon as practicable.
+          </p>
+
+          <h3>PDPA Rights</h3>
+          <p>
+            Under the PDPA, Singapore residents have the right to:
+          </p>
+          <ul>
+            <li>
+              <strong>Access your personal data:</strong> Request a copy via{" "}
+              <strong>Settings → Account → Export My Data</strong>, or by emailing us.
+            </li>
+            <li>
+              <strong>Correct inaccurate personal data:</strong> Request corrections via Settings or
+              by emailing us.
+            </li>
+            <li>
+              <strong>Withdraw consent:</strong> Withdraw your consent for non-essential processing at
+              any time via the cookie preferences panel or by contacting us.
+            </li>
+            <li>
+              <strong>Request erasure:</strong> Request deletion of your account and associated
+              personal data via <strong>Settings → Account → Delete Account</strong>.
+            </li>
+          </ul>
+
+          <h3>Submitting a PDPA Request or Complaint</h3>
+          <p>
+            To exercise your PDPA rights or to raise a data protection concern, please contact us at{" "}
+            <a href="mailto:privacy@intonationlabs.com">privacy@intonationlabs.com</a> with the
+            subject line &quot;PDPA Privacy Request&quot;. We will respond within 30 days.
+          </p>
+          <p>
+            If you are not satisfied with our response, you may lodge a complaint with the Personal Data
+            Protection Commission (PDPC) of Singapore:
+          </p>
+          <ul>
+            <li>
+              <strong>PDPC website:</strong>{" "}
+              <a
+                href="https://www.pdpc.gov.sg"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                www.pdpc.gov.sg
+              </a>
+            </li>
+            <li>
+              <strong>PDPC enquiry:</strong>{" "}
+              <a href="mailto:pdpc_enquiry@pdpc.gov.sg">pdpc_enquiry@pdpc.gov.sg</a>
+            </li>
+          </ul>
+
+          <h2>16. Contact Us</h2>
           <p>
             If you have any questions, concerns, or requests regarding this Privacy Policy or our data
             processing practices, please contact us:

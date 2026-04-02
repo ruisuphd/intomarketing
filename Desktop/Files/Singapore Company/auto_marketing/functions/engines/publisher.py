@@ -15,6 +15,7 @@ from shared.firestore_client import (
 )
 from shared.logger import get_logger
 from shared.models import PublishingRecord, TenantProfile
+from shared.push_client import send_push
 
 logger = get_logger("engine.publisher")
 
@@ -154,7 +155,46 @@ async def run_publisher() -> dict:
 
             if REAL_PUBLISHING_ENABLED and platform in ("linkedin", "x_twitter"):
                 from shared.platform_clients import publish_linkedin, publish_x
+                from shared.token_refresh import is_token_expired, refresh_x_token
 
+                # ── Token expiry checks ──────────────────────────────────────
+                if platform == "x_twitter" and is_token_expired(credentials.expires_at):
+                    x_client_id = os.getenv("X_CLIENT_ID", "")
+                    x_client_secret = os.getenv("X_CLIENT_SECRET", "")
+                    if credentials.refresh_token and x_client_id and x_client_secret:
+                        refreshed = await refresh_x_token(
+                            x_client_id, x_client_secret, credentials.refresh_token
+                        )
+                        if refreshed:
+                            from datetime import timedelta
+                            from shared.firestore_client import update_tenant
+                            new_creds = {
+                                "access_token": refreshed["access_token"],
+                                "refresh_token": refreshed.get("refresh_token", credentials.refresh_token),
+                                "expires_at": (
+                                    datetime.now(timezone.utc)
+                                    + timedelta(seconds=refreshed.get("expires_in", 7200))
+                                ).isoformat(),
+                            }
+                            # Update stored credentials and local reference.
+                            existing = profile.platform_credentials.get("x_twitter", {})
+                            merged = {**existing.model_dump(), **new_creds} if hasattr(existing, "model_dump") else {**vars(existing), **new_creds}
+                            update_tenant(tenant_id, {f"platform_credentials.x_twitter": merged})
+                            credentials = credentials.model_copy(update={
+                                "access_token": new_creds["access_token"],
+                                "refresh_token": new_creds["refresh_token"],
+                            })
+                            logger.info("publisher.x_token_refreshed", extra={"tenant_id": tenant_id})
+                        else:
+                            raise ValueError("X token expired and refresh failed — re-authenticate in Settings")
+                    else:
+                        raise ValueError("X token expired and no refresh token available — re-authenticate in Settings")
+
+                if platform == "linkedin" and is_token_expired(credentials.expires_at):
+                    # LinkedIn tokens are non-refreshable; fail explicitly.
+                    raise ValueError("LinkedIn token expired — please reconnect LinkedIn in Settings")
+
+                # ── Actual publishing ────────────────────────────────────────
                 access_token = credentials.access_token
                 if platform == "linkedin":
                     author_urn = credentials.platform_id or "urn:li:person:unknown"
@@ -207,6 +247,12 @@ async def run_publisher() -> dict:
                     tenant_id=tenant_id,
                     post_id=record.post_id,
                     published_at=published_at,
+                )
+                send_push(
+                    tenant_id=tenant_id,
+                    title="Post published",
+                    body=f"Your post on {platform.replace('_', ' ').title()} is now live.",
+                    section_id="content",
                 )
             published += 1
 

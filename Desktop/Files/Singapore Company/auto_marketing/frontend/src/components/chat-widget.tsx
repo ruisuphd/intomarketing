@@ -1,18 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiChatStream, ApiError } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   settingsUpdated?: Record<string, unknown>;
-}
-
-interface ChatResponse {
-  reply: string;
-  settings_updated: Record<string, unknown>;
-  suggested_questions: string[];
+  upgradeUrl?: string;
+  streaming?: boolean;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -69,40 +66,106 @@ export default function ChatWidget() {
       if (!trimmed || loading) return;
 
       const userMsg: Message = { role: "user", content: trimmed };
-      const newMessages = [...messages, userMsg];
+      const newMessages: Message[] = [
+        ...messages,
+        userMsg,
+        { role: "assistant", content: "", streaming: true },
+      ];
       setMessages(newMessages);
       setInput("");
       setSuggestions([]);
       setLoading(true);
 
       try {
-        const res = await apiFetch<ChatResponse>("/api/chat", {
-          method: "POST",
-          body: JSON.stringify({
-            messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
-          }),
+        const streamPayload = newMessages
+          .slice(0, -1)
+          .map((m) => ({ role: m.role, content: m.content }));
+        const res = await apiChatStream(streamPayload, (delta) => {
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last?.role !== "assistant") return prev;
+            copy[copy.length - 1] = {
+              role: "assistant",
+              content: last.content + delta,
+              streaming: false,
+            };
+            return copy;
+          });
         });
 
-        const assistantMsg: Message = {
-          role: "assistant",
-          content: res.reply,
-          settingsUpdated: Object.keys(res.settings_updated || {}).length > 0
-            ? res.settings_updated
-            : undefined,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
+        setMessages((prev) => {
+          if (prev.length === 0) return prev;
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.role !== "assistant") return prev;
+          copy[copy.length - 1] = {
+            role: "assistant",
+            content: res.reply,
+            streaming: false,
+            settingsUpdated:
+              res.settings_updated && Object.keys(res.settings_updated).length > 0
+                ? res.settings_updated
+                : undefined,
+          };
+          return copy;
+        });
         if (res.suggested_questions?.length) {
           setSuggestions(res.suggested_questions.slice(0, 3));
         }
         if (!open) setUnread((n) => n + 1);
-      } catch {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "Sorry, I'm having trouble connecting. Please try again.",
-          },
-        ]);
+      } catch (err) {
+        const is429 = err instanceof ApiError && err.status === 429;
+        const ex = err instanceof ApiError ? err.extras : undefined;
+        const detail = err instanceof ApiError ? err.detail : null;
+        const limit = Number(
+          ex?.limit ??
+            (typeof detail === "object" && detail && "limit" in detail
+              ? (detail as { limit?: number }).limit
+              : 10),
+        );
+        const tier = String(
+          ex?.tier ??
+            (typeof detail === "object" && detail && "tier" in detail
+              ? (detail as { tier?: string }).tier
+              : "starter"),
+        );
+        const upgradeUrl = String(
+          ex?.upgrade_url ??
+            (typeof detail === "object" && detail && "upgrade_url" in detail
+              ? (detail as { upgrade_url?: string }).upgrade_url
+              : "/billing"),
+        );
+        const devTrace =
+          process.env.NODE_ENV === "development" &&
+          err instanceof ApiError &&
+          err.traceId
+            ? ` [trace ${err.traceId}]`
+            : "";
+        const isTimeout =
+          err instanceof ApiError &&
+          (err.status === 504 || err.code === "CHAT_TIMEOUT");
+        const content = is429
+          ? `You've used all ${limit} chat messages for today (${tier} plan). Upgrade to Pro for 100 messages/day.${devTrace}`
+          : isTimeout
+            ? `${err instanceof ApiError ? err.message : "Request timed out."}${devTrace}`
+            : `Sorry, I'm having trouble connecting. Please try again.${devTrace}`;
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          const base =
+            last?.role === "assistant" && !last.content
+              ? prev.slice(0, -1)
+              : prev;
+          return [
+            ...base,
+            {
+              role: "assistant",
+              content,
+              upgradeUrl: is429 ? upgradeUrl : undefined,
+            },
+          ];
+        });
       } finally {
         setLoading(false);
       }
@@ -143,8 +206,8 @@ export default function ChatWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 flex w-[360px] max-w-[calc(100vw-3rem)] flex-col rounded-apple bg-white shadow-2xl ring-1 ring-apple-border"
-          style={{ height: "520px" }}
+        <div className="fixed bottom-24 right-6 z-50 flex w-[360px] max-w-[calc(100vw-3rem)] flex-col rounded-apple bg-apple-card shadow-2xl ring-1 ring-apple-border"
+          style={{ height: "600px" }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 rounded-t-apple border-b border-apple-border bg-apple-card px-4 py-3">
@@ -166,7 +229,25 @@ export default function ChatWidget() {
                       : "bg-apple-bg text-apple-text"
                   }`}
                 >
-                  {msg.content}
+                  {msg.streaming && !msg.content ? (
+                    <span className="inline-flex gap-1">
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-apple-secondary [animation-delay:-0.3s]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-apple-secondary [animation-delay:-0.15s]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-apple-secondary" />
+                    </span>
+                  ) : (
+                    msg.content
+                  )}
+                  {msg.upgradeUrl && (
+                    <span className="mt-2 block">
+                      <Link
+                        href={msg.upgradeUrl}
+                        className="font-medium text-apple-blue hover:underline"
+                      >
+                        Upgrade to Pro →
+                      </Link>
+                    </span>
+                  )}
                 </div>
                 {msg.settingsUpdated && (
                   <div className="mt-1 flex flex-wrap gap-1">
@@ -185,7 +266,7 @@ export default function ChatWidget() {
                 )}
               </div>
             ))}
-            {loading && (
+            {loading && messages[messages.length - 1]?.role === "user" && (
               <div className="flex items-start">
                 <div className="flex gap-1 rounded-2xl bg-apple-bg px-3.5 py-3">
                   <span className="h-2 w-2 animate-bounce rounded-full bg-apple-secondary [animation-delay:-0.3s]" />
@@ -197,8 +278,28 @@ export default function ChatWidget() {
             <div ref={bottomRef} />
           </div>
 
+          {/* Quick-action buttons */}
+          {!loading && messages.length <= 1 && (
+            <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+              {[
+                { label: "Write a post", msg: "Write a post for me" },
+                { label: "Hot leads", msg: "Show my hot leads" },
+                { label: "Latest intelligence", msg: "Show latest intelligence" },
+                { label: "What should I post?", msg: "What should I post today?" },
+              ].map((action) => (
+                <button
+                  key={action.label}
+                  onClick={() => sendMessage(action.msg)}
+                  className="rounded-full border border-apple-border bg-apple-bg px-3 py-1 text-xs font-medium text-apple-text hover:bg-apple-card transition-colors"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Suggestion chips */}
-          {suggestions.length > 0 && !loading && (
+          {suggestions.length > 0 && !loading && messages.length > 1 && (
             <div className="flex flex-wrap gap-1.5 px-4 pb-2">
               {suggestions.map((q, i) => (
                 <button

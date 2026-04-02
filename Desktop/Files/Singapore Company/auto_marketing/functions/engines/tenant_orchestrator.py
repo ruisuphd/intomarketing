@@ -5,17 +5,25 @@ from __future__ import annotations
 import asyncio
 import time
 import traceback
+from datetime import datetime, timezone
 
 from shared.entitlements import resolve_access
 from shared.firestore_client import query_docs
 from shared.logger import get_logger
 from shared.models import TenantProfile
+from shared.pipeline_runs import pipeline_run_status_from_result, record_pipeline_run
+from shared.push_client import send_push
 
 logger = get_logger("tenant_orchestrator")
 
 # Maximum seconds a single tenant pipeline may run before being cancelled.
 # Cloud Scheduler gives the function 600s total — this budget leaves headroom
 # for multiple tenants and avoids a single slow tenant causing a 504.
+#
+# Cancellation is cooperative: asyncio.wait_for only injects CancelledError at await
+# boundaries. Pipeline stages use async entry points, but RSS fetch uses feedparser
+# against URLs, which performs blocking HTTP inside async methods — a slow feed can
+# delay timeout until the next await.
 _PER_TENANT_TIMEOUT_S = 240
 
 
@@ -60,6 +68,7 @@ async def run_all_active_tenants() -> dict:
 
         logger.info("orchestrator.tenant_start", extra={"tenant_id": tenant_id})
         t0 = time.monotonic()
+        started_at = datetime.now(timezone.utc)
         try:
             result = await asyncio.wait_for(
                 _run_pipeline(tenant_id=tenant_id),
@@ -71,6 +80,22 @@ async def run_all_active_tenants() -> dict:
                 "orchestrator.tenant_done",
                 extra={"tenant_id": tenant_id, "elapsed_s": elapsed_s, **result},
             )
+            completed_at = datetime.now(timezone.utc)
+            record_pipeline_run(
+                tenant_id,
+                started_at=started_at,
+                completed_at=completed_at,
+                status=pipeline_run_status_from_result(result),
+                result=result,
+            )
+            drafts_n = result.get("drafts_generated", 0)
+            if drafts_n and pipeline_run_status_from_result(result) not in ("skipped", "failed"):
+                send_push(
+                    tenant_id=tenant_id,
+                    title="Pipeline complete",
+                    body=f"{drafts_n} new draft{'s' if drafts_n != 1 else ''} ready to review.",
+                    section_id="content",
+                )
         except asyncio.TimeoutError:
             elapsed_s = round(time.monotonic() - t0, 1)
             timed_out += 1
@@ -80,6 +105,14 @@ async def run_all_active_tenants() -> dict:
                     "tenant_id": tenant_id,
                     "error": f"Timed out after {_PER_TENANT_TIMEOUT_S}s",
                 }
+            )
+            completed_at = datetime.now(timezone.utc)
+            record_pipeline_run(
+                tenant_id,
+                started_at=started_at,
+                completed_at=completed_at,
+                status="timeout",
+                error=f"Timed out after {_PER_TENANT_TIMEOUT_S}s",
             )
             logger.error(
                 "orchestrator.tenant_timeout",
@@ -97,6 +130,14 @@ async def run_all_active_tenants() -> dict:
                     "tenant_id": tenant_id,
                     "error": str(exc),
                 }
+            )
+            completed_at = datetime.now(timezone.utc)
+            record_pipeline_run(
+                tenant_id,
+                started_at=started_at,
+                completed_at=completed_at,
+                status="failed",
+                error=str(exc),
             )
             logger.error(
                 "orchestrator.tenant_failed",

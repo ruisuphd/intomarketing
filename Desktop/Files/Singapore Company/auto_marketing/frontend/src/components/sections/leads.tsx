@@ -28,6 +28,10 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
+  const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
+  const [timelineByLead, setTimelineByLead] = useState<Record<string, { event: string; at: string; detail: string; activity_id?: string }[]>>({});
+  const [noteTextByLead, setNoteTextByLead] = useState<Record<string, string>>({});
+  const [noteSubmittingId, setNoteSubmittingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!billing || !hasTierAccess(billing, "pro")) {
@@ -129,6 +133,56 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
     window.location.href = mailtoLink;
   }
 
+  async function handleExpandLead(leadId: string) {
+    if (expandedLeadId === leadId) {
+      setExpandedLeadId(null);
+      return;
+    }
+    setExpandedLeadId(leadId);
+    if (timelineByLead[leadId]) return;
+    try {
+      const data = await apiFetch<{ events?: { event: string; at: string; detail: string }[] }>(
+        `/api/leads/${leadId}/timeline`
+      );
+      setTimelineByLead((prev) => ({ ...prev, [leadId]: data.events || [] }));
+    } catch {
+      setTimelineByLead((prev) => ({ ...prev, [leadId]: [] }));
+    }
+  }
+
+  function formatRelativeTime(iso: string) {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return `${days} days ago`;
+    return d.toLocaleDateString();
+  }
+
+  async function handleAddNote(leadId: string) {
+    const text = (noteTextByLead[leadId] || "").trim();
+    if (!text || noteSubmittingId) return;
+    setNoteSubmittingId(leadId);
+    try {
+      await apiFetch(`/api/leads/${leadId}/activities`, {
+        method: "POST",
+        body: JSON.stringify({ content: text, activity_type: "note_added" }),
+      });
+      const newEvent = { event: "note_added", at: new Date().toISOString(), detail: text };
+      setTimelineByLead((prev) => ({
+        ...prev,
+        [leadId]: [newEvent, ...(prev[leadId] || [])],
+      }));
+      setNoteTextByLead((prev) => ({ ...prev, [leadId]: "" }));
+    } catch (err: any) {
+      setError(err?.message || "Failed to add note.");
+    } finally {
+      setNoteSubmittingId(null);
+    }
+  }
+
   async function handleEnrich(lead: QualifiedLead) {
     if (!lead.id || !lead.contact_linkedin_url) return;
     setEnrichingId(lead.id);
@@ -146,7 +200,7 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
   }
 
   return (
-    <section id="leads" className="scroll-mt-28">
+    <section>
       <h2 className="mb-4 text-xl font-semibold">Lead Pipeline</h2>
 
       {billing && !hasTierAccess(billing, "pro") ? (
@@ -159,7 +213,8 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
       ) : (
         <div className="space-y-3">
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <div className="flex gap-4 overflow-x-auto pb-4">
+          <p className="sm:hidden text-xs text-apple-secondary mb-2">Swipe left to see all stages</p>
+          <div className="flex gap-4 overflow-x-auto pb-4 [touch-action:pan-x]">
             {COLUMNS.map((col) => {
               const columnLeads = leads.filter((l) => (l.status || "new") === col.id);
               return (
@@ -176,21 +231,44 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
                     </span>
                   </div>
                   <div className="flex flex-col gap-3">
+                    {columnLeads.length === 0 && (
+                      <div className="rounded-lg border border-dashed border-apple-border p-4 text-center">
+                        <p className="text-xs text-apple-secondary">No leads in this stage yet</p>
+                      </div>
+                    )}
                     {columnLeads.map((lead, i) => {
                       return (
                         <div
                           key={lead.id || i}
                           draggable
                           onDragStart={(e) => handleDragStart(e, lead.id)}
-                          className="cursor-grab rounded-apple bg-apple-card p-4 shadow-sm transition-shadow hover:shadow-apple active:cursor-grabbing"
+                          className="relative cursor-grab rounded-apple bg-apple-card p-4 shadow-sm transition-shadow hover:shadow-apple active:cursor-grabbing"
                         >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleExpandLead(lead.id);
+                            }}
+                            className="absolute right-3 top-3 text-xs text-apple-secondary hover:text-apple-text"
+                          >
+                            {expandedLeadId === lead.id ? "−" : "+"} Timeline
+                          </button>
                           <div className="flex items-start justify-between">
-                            <div>
+                            <div className="min-w-0 flex-1">
                               <h4 className="text-[15px] font-semibold">{lead.company_name || "Unknown"}</h4>
                               {(lead.draft_subject || lead.suggested_outreach_angle) && (
                                 <p className="mt-1 line-clamp-2 text-xs text-apple-secondary">
                                   {lead.draft_subject || lead.suggested_outreach_angle}
                                 </p>
+                              )}
+                              {lead.icp_reasoning && (
+                                <details className="mt-2">
+                                  <summary className="cursor-pointer text-xs text-apple-blue hover:underline">
+                                    Qualified because
+                                  </summary>
+                                  <p className="mt-1 text-xs text-apple-secondary">{lead.icp_reasoning}</p>
+                                </details>
                               )}
                             </div>
                             <span
@@ -229,6 +307,52 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
                               Send Outreach
                             </button>
                           </div>
+                          {expandedLeadId === lead.id && (
+                            <div className="mt-4 border-t border-apple-border pt-4">
+                              <h5 className="mb-2 text-xs font-semibold text-apple-secondary">Activity</h5>
+                              <div className="space-y-3">
+                                {(timelineByLead[lead.id] || []).length === 0 ? (
+                                  <p className="text-xs text-apple-secondary">No events yet</p>
+                                ) : (
+                                  (timelineByLead[lead.id] || []).map((ev, idx) => (
+                                    <div key={ev.activity_id ?? idx} className="flex gap-3 text-xs">
+                                      <span className={`h-2 w-2 shrink-0 rounded-full mt-1.5 ${ev.event === "note_added" ? "bg-amber-400" : "bg-apple-blue"}`} />
+                                      <div>
+                                        <p className="font-medium capitalize">{ev.event.replace(/_/g, " ")}</p>
+                                        <p className="text-apple-secondary">{ev.detail}</p>
+                                        <p className="text-apple-secondary">{formatRelativeTime(ev.at)}</p>
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                              <div className="mt-3 flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Add a note…"
+                                  value={noteTextByLead[lead.id] || ""}
+                                  onChange={(e) =>
+                                    setNoteTextByLead((prev) => ({ ...prev, [lead.id]: e.target.value }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+                                      void handleAddNote(lead.id);
+                                    }
+                                  }}
+                                  className="flex-1 rounded-apple-sm border border-apple-border bg-transparent px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-apple-blue"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!noteTextByLead[lead.id]?.trim() || noteSubmittingId === lead.id}
+                                  onClick={() => void handleAddNote(lead.id)}
+                                  className="rounded-apple-sm bg-apple-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-apple-blue-hover"
+                                >
+                                  {noteSubmittingId === lead.id ? "…" : "Add"}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

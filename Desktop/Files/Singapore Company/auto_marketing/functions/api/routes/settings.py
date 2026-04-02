@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
 from api.middleware.auth import require_tenant
+from api.middleware.legal import require_legal_acceptance
+from shared.datetime_utils import coerce_datetime
 from shared.entitlements import normalize_subscription_tier
 from shared.platforms import normalize_platforms
 from shared.settings_limits import (
@@ -16,14 +19,19 @@ from shared.settings_limits import (
     INDUSTRY_KEYWORDS_LIMIT,
     TARGET_AUDIENCE_MAX_CHARS,
 )
-from shared.firestore_client import update_tenant
+from shared.firestore_client import query_docs, update_tenant
+from shared.legal_version import LEGAL_DOCS_VERSION
 from shared.models import TenantProfile
 from shared.redis_client import cache_delete_pattern
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _RESERVED_EMAIL_DOMAINS = {
-    "example.com", "example.net", "example.org",
-    "test.com", "localhost", "invalid",
+    "example.com",
+    "example.net",
+    "example.org",
+    "test.com",
+    "localhost",
+    "invalid",
 }
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -49,10 +57,14 @@ async def get_settings(tenant: TenantProfile = Depends(require_tenant)):
         "subscription_tier": normalize_subscription_tier(tenant.subscription_tier),
         "subscription_status": tenant.subscription_status,
         "starter_access_expires_at": tenant.starter_access_expires_at,
-        "is_internal": tenant.is_internal,
         "onboarding_completed": tenant.onboarding_completed,
         "tone_formal_casual": getattr(tenant, "tone_formal_casual", 50),
         "tone_technical_accessible": getattr(tenant, "tone_technical_accessible", 50),
+        "legal_terms_version": tenant.legal_terms_version,
+        "legal_terms_accepted_at": tenant.legal_terms_accepted_at.isoformat()
+        if tenant.legal_terms_accepted_at
+        else None,
+        "legal_docs_current_version": LEGAL_DOCS_VERSION,
     }
 
 
@@ -146,7 +158,7 @@ class SettingsUpdate(BaseModel):
 @router.put("")
 async def update_settings(
     body: SettingsUpdate,
-    tenant: TenantProfile = Depends(require_tenant),
+    tenant: TenantProfile = Depends(require_legal_acceptance),
 ):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
 
@@ -155,3 +167,68 @@ async def update_settings(
         cache_delete_pattern(f"tenant:uid:{tenant.owner_uid}*")
 
     return {"ok": True, "updated_fields": list(updates.keys())}
+
+
+class GoalsUpdate(BaseModel):
+    follower_growth: int | None = None
+    lead_volume: int | None = None
+    post_frequency: int | None = None
+
+    @field_validator("follower_growth", "lead_volume", "post_frequency")
+    @classmethod
+    def clamp_goals(cls, v: int | None) -> int | None:
+        if v is None:
+            return None
+        return max(0, min(10_000, int(v)))
+
+
+@router.get("/goals")
+async def get_goals(tenant: TenantProfile = Depends(require_tenant)):
+    """Return monthly goals and this month's actuals."""
+    goals = getattr(tenant, "monthly_goals", None) or {}
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    published = query_docs(
+        "publishing_records",
+        filters=[("status", "==", "published")],
+        tenant_id=tenant.tenant_id,
+        limit=200,
+    )
+    posts_this_month = sum(
+        1 for p in published
+        if (coerce_datetime(p.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc)) >= month_start
+    )
+
+    leads = query_docs("qualified_leads", tenant_id=tenant.tenant_id, limit=200)
+    leads_this_month = sum(
+        1 for l in leads
+        if (coerce_datetime(l.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) >= month_start
+    )
+
+    return {
+        "goals": {
+            "follower_growth": int(goals.get("follower_growth") or 0),
+            "lead_volume": int(goals.get("lead_volume") or 0),
+            "post_frequency": int(goals.get("post_frequency") or 0),
+        },
+        "actuals": {
+            "posts_this_month": posts_this_month,
+            "leads_this_month": leads_this_month,
+        },
+    }
+
+
+@router.put("/goals")
+async def update_goals(
+    body: GoalsUpdate,
+    tenant: TenantProfile = Depends(require_legal_acceptance),
+):
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if updates:
+        # Use dot-notation keys so Firestore merges individual goal fields
+        # instead of replacing the entire monthly_goals map.
+        dot_updates = {f"monthly_goals.{k}": v for k, v in updates.items()}
+        update_tenant(tenant.tenant_id, dot_updates)
+        cache_delete_pattern(f"tenant:uid:{tenant.owner_uid}*")
+    return {"ok": True}

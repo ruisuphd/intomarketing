@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { planBadgeLabel } from "@/lib/billing";
 import { signOut } from "@/lib/firebase";
+import NotificationPanel from "@/components/notification-panel";
+import { CHANGELOG_VERSION } from "@/lib/changelog-version";
 import type { BillingSummary } from "@/types";
 
 const SECTIONS = [
@@ -23,6 +25,7 @@ interface NavProps {
   activeSection?: string;
   billing?: BillingSummary | null;
   onSectionSelect?: (sectionId: string) => void;
+  streakCount?: number;
 }
 
 export default function Nav({
@@ -30,9 +33,16 @@ export default function Nav({
   activeSection,
   billing,
   onSectionSelect,
+  streakCount,
 }: NavProps) {
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [changelogUnread, setChangelogUnread] = useState(false);
+
+  useEffect(() => {
+    const seen = localStorage.getItem("intomarketing_changelog_last_seen");
+    setChangelogUnread(seen !== CHANGELOG_VERSION);
+  }, []);
   const initials = (user?.displayName || user?.email || "U")
     .split(/[\s@]/)
     .map((w) => w[0])
@@ -56,9 +66,15 @@ export default function Nav({
         <div className="flex min-w-0 items-center gap-2">
           <Link
             href="/dashboard"
-            className="max-w-[11rem] truncate text-[15px] font-semibold tracking-tight sm:max-w-none"
+            className="flex flex-col"
+            aria-label="IntoMarketing by Intonation Labs"
           >
-            {companyName || "IntoMarketing"}
+            <span className="max-w-[11rem] truncate text-[15px] font-semibold tracking-tight sm:max-w-none">
+              {companyName || "IntoMarketing"}
+            </span>
+            <span className="hidden text-[10px] font-medium tracking-tight text-apple-secondary sm:block">
+              by Intonation Labs
+            </span>
           </Link>
           {billing && (
             <span className="hidden rounded-full bg-apple-bg px-2 py-0.5 text-[11px] font-medium text-apple-secondary sm:inline-flex">
@@ -68,6 +84,20 @@ export default function Nav({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {streakCount != null && streakCount > 0 && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-600"
+              title={`${streakCount}-day approval streak`}
+            >
+              🔥 {streakCount}
+            </span>
+          )}
+          <NotificationPanel
+            onNavigate={(sectionId) => {
+              onSectionSelect?.(sectionId);
+              document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
           <Link
             href="/settings"
             className="rounded-full p-2 text-apple-secondary hover:bg-apple-bg"
@@ -82,14 +112,66 @@ export default function Nav({
           <div className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMenuOpen((v) => !v);
+                }
+                if (e.key === "Escape") setMenuOpen(false);
+              }}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-apple-text text-xs font-bold text-white"
+              aria-label="User menu"
+              aria-expanded={menuOpen}
+              aria-haspopup="true"
             >
               {initials}
             </button>
             {menuOpen && (
               <>
-                <div className="fixed inset-0" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 mt-2 w-40 rounded-apple-sm border border-apple-border bg-apple-card p-1 shadow-apple-lg">
+                <div className="fixed inset-0" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+                <div
+                  className="absolute right-0 mt-2 w-48 rounded-apple-sm border border-apple-border bg-apple-card p-1 shadow-apple-lg"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="User menu options"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setMenuOpen(false);
+                  }}
+                >
+                  <Link
+                    href="/settings?tab=account"
+                    onClick={() => setMenuOpen(false)}
+                    className="block rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"
+                  >
+                    Account settings
+                  </Link>
+                  <Link
+                    href="/billing"
+                    onClick={() => setMenuOpen(false)}
+                    className="block rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"
+                  >
+                    Billing
+                  </Link>
+                  <Link
+                    href="/changelog"
+                    onClick={() => { setMenuOpen(false); setChangelogUnread(false); }}
+                    className="flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"
+                  >
+                    <span className="relative">
+                      What&apos;s New
+                      {changelogUnread && (
+                        <span className="absolute -right-2 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
+                      )}
+                    </span>
+                    <kbd className="font-mono text-[10px] border border-apple-border rounded px-1 py-0.5 text-apple-secondary">⌘K</kbd>
+                  </Link>
+                  <Link
+                    href="/help"
+                    onClick={() => setMenuOpen(false)}
+                    className="block rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"
+                  >
+                    Help / Docs
+                  </Link>
                   <button
                     onClick={() => { signOut(); setMenuOpen(false); }}
                     className="w-full rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"

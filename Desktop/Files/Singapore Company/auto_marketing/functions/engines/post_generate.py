@@ -9,7 +9,7 @@ from prompts.daily_post import (
     build_user_message,
 )
 from shared.gemini_client import GeminiClient
-from shared.firestore_client import query_docs
+from shared.firestore_client import get_tenant, query_docs
 from shared.logger import get_logger
 from shared.models import DailyPostResult
 from shared.retriever import Retriever
@@ -65,8 +65,20 @@ async def generate_daily_post(
 
     from shared.firestore_client import get_doc
 
+    # Inject queued content ideas into the system prompt as additional context
+    tenant_doc = get_tenant(tenant_id) if tenant_id else None
+    content_ideas: list[dict] = (tenant_doc or {}).get("content_ideas") or []
+    ideas_hint = ""
+    if content_ideas:
+        top_ideas = [item.get("text", "") for item in content_ideas[:3] if item.get("text")]
+        if top_ideas:
+            ideas_hint = (
+                "\n\n## Content Ideas Queue (pick one if relevant)\n"
+                + "\n".join(f"- {idea}" for idea in top_ideas)
+            )
+
     guidelines_doc = get_doc("brand_guidelines", "current", tenant_id=tenant_id)
-    system_prompt_to_use = SYSTEM_PROMPT
+    system_prompt_to_use = SYSTEM_PROMPT + ideas_hint
     if guidelines_doc:
         guidelines_text = (
             f"\n\n## Brand Guidelines\n"
