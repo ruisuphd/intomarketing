@@ -2,17 +2,18 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
+  darkMode: "media",
   theme: {
     extend: {
       colors: {
         apple: {
-          text: "#1d1d1f",
-          secondary: "#86868b",
-          bg: "#f5f5f7",
+          text: "rgb(var(--apple-text) / <alpha-value>)",
+          secondary: "rgb(var(--apple-secondary) / <alpha-value>)",
+          bg: "rgb(var(--apple-bg) / <alpha-value>)",
           blue: "#0071e3",
           "blue-hover": "#0077ed",
-          card: "#ffffff",
-          border: "#d2d2d7",
+          card: "rgb(var(--apple-card) / <alpha-value>)",
+          border: "rgb(var(--apple-border) / <alpha-value>)",
         },
       },
       fontFamily: {

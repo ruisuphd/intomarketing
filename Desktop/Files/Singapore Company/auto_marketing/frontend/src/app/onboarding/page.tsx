@@ -53,6 +53,22 @@ export default function Onboarding() {
     }
   }, [user]);
 
+  // Restore saved step state on mount.
+  useEffect(() => {
+    if (!user) return;
+    apiFetch<{ step_state?: { step: number; form_data: Record<string, unknown> } | null }>(
+      "/onboarding/step-state"
+    )
+      .then((d) => {
+        if (d.step_state) {
+          setStep(d.step_state.step || 1);
+          setFormData((prev) => ({ ...prev, ...(d.step_state?.form_data || {}) }));
+        }
+      })
+      .catch(() => {/* ignore — step state is best-effort */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
   const progressWidth = useMemo(() => `${((step - 1) / (STEP_COUNT - 1)) * 100}%`, [step]);
 
   function updateArrayField(
@@ -119,7 +135,33 @@ export default function Onboarding() {
     }
   }
 
+  async function handleWebsiteBlur() {
+    const url = formData.website.trim();
+    if (!url.startsWith("http")) return;
+    try {
+      const hints = await apiFetch<{
+        description_hint?: string;
+        title_hint?: string;
+        industry_hint?: string;
+      }>("/onboarding/scrape-website", {
+        method: "POST",
+        body: JSON.stringify({ website_url: url }),
+      });
+      setFormData((prev) => ({
+        ...prev,
+        industry: prev.industry || hints.industry_hint || prev.industry,
+        brandVoice: prev.brandVoice || hints.description_hint || prev.brandVoice,
+      }));
+    } catch {/* non-blocking */}
+  }
+
   const handleNext = () => {
+    // Persist progress before advancing.
+    void apiFetch("/onboarding/save-step", {
+      method: "POST",
+      body: JSON.stringify({ step, form_data: formData }),
+    }).catch(() => {/* non-blocking */});
+
     if (step < STEP_COUNT) {
       setStep((current) => current + 1);
       return;
@@ -247,6 +289,7 @@ export default function Onboarding() {
                   placeholder="https://acme.com"
                   value={formData.website}
                   onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                  onBlur={() => void handleWebsiteBlur()}
                 />
               </div>
               <div>

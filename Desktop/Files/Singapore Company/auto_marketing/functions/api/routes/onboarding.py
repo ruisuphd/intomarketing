@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 from api.middleware.auth import get_current_user, require_access
 from api.middleware.legal import ensure_legal_acceptance, require_legal_acceptance
@@ -149,3 +149,69 @@ async def upload_document(
     doc_id = add_doc("documents", doc_data, tenant_id=tenant.tenant_id)
 
     return {"ok": True, "document_id": doc_id, "storage_path": gs_path}
+
+
+# ── Website scraping (auto-fill) ──────────────────────────────────────────────
+
+
+class ScrapeWebsiteRequest(BaseModel):
+    website_url: str
+
+
+@router.post("/scrape-website")
+async def scrape_website(
+    body: ScrapeWebsiteRequest,
+    _user=Depends(get_current_user),
+):
+    """Fetch a website and return metadata hints for onboarding auto-fill."""
+    from shared.website_scraper import scrape_website_metadata
+
+    hints = await scrape_website_metadata(body.website_url)
+    return hints
+
+
+# ── Step state persistence ────────────────────────────────────────────────────
+
+
+class SaveStepRequest(BaseModel):
+    step: int
+    form_data: dict
+
+
+@router.post("/save-step")
+async def save_onboarding_step(
+    body: SaveStepRequest,
+    user=Depends(get_current_user),
+):
+    """Persist partial onboarding progress so the user can resume later."""
+    tenant_id = user.get("uid") or user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    update_tenant(
+        tenant_id,
+        {
+            "onboarding_step_state": {
+                "step": body.step,
+                "form_data": body.form_data,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+    )
+    return {"ok": True}
+
+
+@router.get("/step-state")
+async def get_onboarding_step_state(
+    user=Depends(get_current_user),
+):
+    """Return saved onboarding step state if any."""
+    from shared.firestore_client import get_tenant as _get_tenant
+
+    tenant_id = user.get("uid") or user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    tenant = _get_tenant(tenant_id)
+    state = (tenant or {}).get("onboarding_step_state")
+    return {"step_state": state}

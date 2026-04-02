@@ -24,8 +24,10 @@ async def _fetch_platform_metrics(
     linkedin_token = (
         linkedin_creds.get("access_token") if isinstance(linkedin_creds, dict) else None
     )
+    # Prefer org_urn (captured during OAuth if MDP scopes were granted).
+    # Fall back to platform_id only if it happens to be an org URN already.
     linkedin_org = (
-        linkedin_creds.get("platform_id", "")
+        (linkedin_creds.get("org_urn") or linkedin_creds.get("platform_id", ""))
         if isinstance(linkedin_creds, dict)
         else ""
     )

@@ -15,6 +15,7 @@ import type { BillingSummary, TenantProfile } from "@/types";
 
 const STRIPE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 const STRIPE_PRICING_TABLE_ID = process.env.NEXT_PUBLIC_STRIPE_PRICING_TABLE_ID ?? "";
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const stripePricingTableConfigured =
   Boolean(STRIPE_PUBLISHABLE_KEY && STRIPE_PRICING_TABLE_ID);
 
@@ -132,10 +133,33 @@ export default function SettingsPage() {
   const [invoices, setInvoices] = useState<{ id: string; number: string | null; amount_paid: number; currency: string; created: number; invoice_pdf: string | null }[]>([]);
   const [invoicesHasMore, setInvoicesHasMore] = useState(false);
   const [shouldPollAfterCheckout, setShouldPollAfterCheckout] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState("");
+  const [goalPostFrequency, setGoalPostFrequency] = useState(0);
+  const [goalLeadVolume, setGoalLeadVolume] = useState(0);
+  const [goalFollowerGrowth, setGoalFollowerGrowth] = useState(0);
+  const [goalsSaving, setGoalsSaving] = useState(false);
+  const [goalsSaved, setGoalsSaved] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setPushPermission("unsupported");
+      return;
+    }
+    setPushPermission(Notification.permission);
+    if (Notification.permission === "granted" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.pushManager.getSubscription())
+        .then((sub) => setPushSubscribed(!!sub))
+        .catch(() => {});
+    }
+  }, []);
 
   const fetchOauthStatus = useCallback(async () => {
     if (!user) return;
@@ -155,14 +179,65 @@ export default function SettingsPage() {
   const isTokenExpiringSoon = (expiresAt?: string) =>
     expiresAt && new Date(expiresAt).getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
 
+  const handlePushToggle = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushMessage("Push notifications are not supported in this browser.");
+      return;
+    }
+    if (!VAPID_PUBLIC_KEY) {
+      setPushMessage("Push notifications are not configured yet.");
+      return;
+    }
+    setPushBusy(true);
+    setPushMessage("");
+    try {
+      if (pushSubscribed) {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await apiFetch("/api/push/subscribe", {
+            method: "DELETE",
+            body: JSON.stringify(sub.toJSON()),
+          });
+          await sub.unsubscribe();
+        }
+        setPushSubscribed(false);
+        setPushMessage("Push notifications disabled.");
+      } else {
+        const permission = await Notification.requestPermission();
+        setPushPermission(permission);
+        if (permission !== "granted") {
+          setPushMessage("Permission denied. Enable notifications in your browser settings.");
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: VAPID_PUBLIC_KEY,
+        });
+        await apiFetch("/api/push/subscribe", {
+          method: "POST",
+          body: JSON.stringify(sub.toJSON()),
+        });
+        setPushSubscribed(true);
+        setPushMessage("Push notifications enabled.");
+      }
+    } catch {
+      setPushMessage("Something went wrong. Please try again.");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   const fetchSettings = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setPageError("");
     try {
-      const [data, billingState] = await Promise.all([
+      const [data, billingState, goalsResp] = await Promise.all([
         apiFetch<Partial<TenantProfile>>("/api/settings"),
         apiFetch<BillingSummary>("/billing/subscription"),
+        apiFetch<{ goals: Record<string, number> }>("/api/settings/goals").catch(() => null),
       ]);
       setSettings(data);
       setBilling(billingState);
@@ -177,6 +252,11 @@ export default function SettingsPage() {
       setDigestTimezone(data.timezone || "Asia/Singapore");
       setToneFormalCasual((data as any).tone_formal_casual ?? 50);
       setToneTechnicalAccessible((data as any).tone_technical_accessible ?? 50);
+      if (goalsResp?.goals) {
+        setGoalPostFrequency(goalsResp.goals.post_frequency ?? 0);
+        setGoalLeadVolume(goalsResp.goals.lead_volume ?? 0);
+        setGoalFollowerGrowth(goalsResp.goals.follower_growth ?? 0);
+      }
     } catch (err: any) {
       setPageError(err.message || "Unable to load settings.");
     } finally {
@@ -782,7 +862,110 @@ export default function SettingsPage() {
                   Your daily digest email will be sent at the notification time in this timezone.
                 </p>
               </div>
+
+              {pushPermission !== "unsupported" && (
+                <div className="border-t border-apple-border pt-4">
+                  <p className="text-sm font-medium">Browser push notifications</p>
+                  <p className="mt-0.5 text-xs text-apple-secondary">
+                    Get notified when drafts are ready, leads update, or posts are published.
+                  </p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handlePushToggle()}
+                      disabled={pushBusy || pushPermission === "denied"}
+                      className="rounded-apple-sm bg-apple-blue px-4 py-2 text-sm font-medium text-white hover:bg-apple-blue-hover disabled:opacity-50"
+                    >
+                      {pushBusy
+                        ? "Updating…"
+                        : pushSubscribed
+                        ? "Disable push notifications"
+                        : "Enable push notifications"}
+                    </button>
+                    {pushSubscribed && (
+                      <span className="text-xs text-green-600 font-medium">Active</span>
+                    )}
+                  </div>
+                  {pushPermission === "denied" && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      Notifications are blocked. Enable them in your browser settings, then reload.
+                    </p>
+                  )}
+                  {pushMessage && (
+                    <p className="mt-2 text-xs text-apple-secondary">{pushMessage}</p>
+                  )}
+                </div>
+              )}
             </div>
+            <div className="border-t border-apple-border pt-4">
+              <p className="text-sm font-medium">Monthly goals</p>
+              <p className="mt-0.5 text-xs text-apple-secondary">
+                Set targets to track your progress on the Overview dashboard.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-apple-secondary">Posts / month</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={goalPostFrequency || ""}
+                    onChange={(e) => setGoalPostFrequency(Number(e.target.value) || 0)}
+                    placeholder="e.g. 20"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-apple-secondary">New leads / month</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={goalLeadVolume || ""}
+                    onChange={(e) => setGoalLeadVolume(Number(e.target.value) || 0)}
+                    placeholder="e.g. 10"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-apple-secondary">Follower growth</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={goalFollowerGrowth || ""}
+                    onChange={(e) => setGoalFollowerGrowth(Number(e.target.value) || 0)}
+                    placeholder="e.g. 100"
+                    className="w-full"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={goalsSaving}
+                onClick={async () => {
+                  setGoalsSaving(true);
+                  setGoalsSaved(false);
+                  try {
+                    await apiFetch("/api/settings/goals", {
+                      method: "PUT",
+                      body: JSON.stringify({
+                        post_frequency: goalPostFrequency,
+                        lead_volume: goalLeadVolume,
+                        follower_growth: goalFollowerGrowth,
+                      }),
+                    });
+                    setGoalsSaved(true);
+                    setTimeout(() => setGoalsSaved(false), 2000);
+                  } catch { /* ignore */ }
+                  finally { setGoalsSaving(false); }
+                }}
+                className="mt-3 rounded-apple-sm bg-apple-blue px-4 py-2 text-sm font-medium text-white hover:bg-apple-blue-hover disabled:opacity-50"
+              >
+                {goalsSaved ? "Goals saved" : goalsSaving ? "Saving…" : "Save goals"}
+              </button>
+            </div>
+
             <button
               onClick={() =>
                 handleSave({

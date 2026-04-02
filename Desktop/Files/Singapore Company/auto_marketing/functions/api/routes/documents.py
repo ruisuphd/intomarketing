@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form
 
 from api.middleware.auth import require_access
 from api.middleware.legal import require_access_with_legal
@@ -32,6 +32,7 @@ async def list_documents(
 @router.post("")
 async def upload_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     doc_type: str = Form("other"),
     tenant: TenantProfile = Depends(require_access_with_legal("starter", "pro")),
@@ -88,6 +89,20 @@ async def upload_document(
             "documents.ingestion_start_failed",
             extra={"doc_id": doc_id, "error": str(exc)},
         )
+
+    # After ingestion, re-synthesize brand guidelines from all chunks for this tenant.
+    # This is done as a background task so the upload response is not blocked.
+    async def _synthesize(tid: str) -> None:
+        try:
+            from engines.brand_synthesizer import synthesize_brand_guidelines
+            await synthesize_brand_guidelines(tid)
+        except Exception as exc:
+            logger.warning(
+                "documents.brand_synthesis_failed",
+                extra={"tenant_id": tid, "error": str(exc)},
+            )
+
+    background_tasks.add_task(_synthesize, tenant.tenant_id)
 
     return {"ok": True, "document_id": doc_id}
 

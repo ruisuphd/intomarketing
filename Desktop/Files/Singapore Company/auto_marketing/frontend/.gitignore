@@ -1,0 +1,3 @@
+# Serwist (generated during `next build`)
+public/sw*
+public/swe-worker*

@@ -29,7 +29,9 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
   const [error, setError] = useState("");
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
-  const [timelineByLead, setTimelineByLead] = useState<Record<string, { event: string; at: string; detail: string }[]>>({});
+  const [timelineByLead, setTimelineByLead] = useState<Record<string, { event: string; at: string; detail: string; activity_id?: string }[]>>({});
+  const [noteTextByLead, setNoteTextByLead] = useState<Record<string, string>>({});
+  const [noteSubmittingId, setNoteSubmittingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!billing || !hasTierAccess(billing, "pro")) {
@@ -159,6 +161,28 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
     return d.toLocaleDateString();
   }
 
+  async function handleAddNote(leadId: string) {
+    const text = (noteTextByLead[leadId] || "").trim();
+    if (!text || noteSubmittingId) return;
+    setNoteSubmittingId(leadId);
+    try {
+      await apiFetch(`/api/leads/${leadId}/activities`, {
+        method: "POST",
+        body: JSON.stringify({ content: text, activity_type: "note_added" }),
+      });
+      const newEvent = { event: "note_added", at: new Date().toISOString(), detail: text };
+      setTimelineByLead((prev) => ({
+        ...prev,
+        [leadId]: [newEvent, ...(prev[leadId] || [])],
+      }));
+      setNoteTextByLead((prev) => ({ ...prev, [leadId]: "" }));
+    } catch (err: any) {
+      setError(err?.message || "Failed to add note.");
+    } finally {
+      setNoteSubmittingId(null);
+    }
+  }
+
   async function handleEnrich(lead: QualifiedLead) {
     if (!lead.id || !lead.contact_linkedin_url) return;
     setEnrichingId(lead.id);
@@ -189,7 +213,8 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
       ) : (
         <div className="space-y-3">
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <div className="flex gap-4 overflow-x-auto pb-4">
+          <p className="sm:hidden text-xs text-apple-secondary mb-2">Swipe left to see all stages</p>
+          <div className="flex gap-4 overflow-x-auto pb-4 [touch-action:pan-x]">
             {COLUMNS.map((col) => {
               const columnLeads = leads.filter((l) => (l.status || "new") === col.id);
               return (
@@ -206,6 +231,11 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
                     </span>
                   </div>
                   <div className="flex flex-col gap-3">
+                    {columnLeads.length === 0 && (
+                      <div className="rounded-lg border border-dashed border-apple-border p-4 text-center">
+                        <p className="text-xs text-apple-secondary">No leads in this stage yet</p>
+                      </div>
+                    )}
                     {columnLeads.map((lead, i) => {
                       return (
                         <div
@@ -285,8 +315,8 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
                                   <p className="text-xs text-apple-secondary">No events yet</p>
                                 ) : (
                                   (timelineByLead[lead.id] || []).map((ev, idx) => (
-                                    <div key={idx} className="flex gap-3 text-xs">
-                                      <span className="h-2 w-2 shrink-0 rounded-full bg-apple-blue mt-1.5" />
+                                    <div key={ev.activity_id ?? idx} className="flex gap-3 text-xs">
+                                      <span className={`h-2 w-2 shrink-0 rounded-full mt-1.5 ${ev.event === "note_added" ? "bg-amber-400" : "bg-apple-blue"}`} />
                                       <div>
                                         <p className="font-medium capitalize">{ev.event.replace(/_/g, " ")}</p>
                                         <p className="text-apple-secondary">{ev.detail}</p>
@@ -295,6 +325,31 @@ export default function LeadsSection({ billing }: LeadsSectionProps) {
                                     </div>
                                   ))
                                 )}
+                              </div>
+                              <div className="mt-3 flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Add a note…"
+                                  value={noteTextByLead[lead.id] || ""}
+                                  onChange={(e) =>
+                                    setNoteTextByLead((prev) => ({ ...prev, [lead.id]: e.target.value }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+                                      void handleAddNote(lead.id);
+                                    }
+                                  }}
+                                  className="flex-1 rounded-apple-sm border border-apple-border bg-transparent px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-apple-blue"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!noteTextByLead[lead.id]?.trim() || noteSubmittingId === lead.id}
+                                  onClick={() => void handleAddNote(lead.id)}
+                                  className="rounded-apple-sm bg-apple-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-apple-blue-hover"
+                                >
+                                  {noteSubmittingId === lead.id ? "…" : "Add"}
+                                </button>
                               </div>
                             </div>
                           )}

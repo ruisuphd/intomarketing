@@ -20,6 +20,8 @@ from api.routes import (
     billing,
     calendar as calendar_routes,
     chat as chat_routes,
+    consent as consent_routes,
+    content_ideas as content_ideas_routes,
     dashboard as dashboard_routes,
     documents,
     drafts,
@@ -33,6 +35,7 @@ from api.routes import (
     onboarding,
     outreach,
     pipeline as pipeline_routes,
+    push as push_routes,
     settings,
 )
 from api.routes.usage import router as usage_router
@@ -115,6 +118,12 @@ _RATE_LIMIT_CONFIG: dict[str, tuple[int, int]] = {
     "/api/newsletters/generate": (5, 60),
     "/billing/checkout": (5, 60),
     "/api/oauth/": (10, 60),
+    # Sensitive account operations — tighter limits
+    "/api/account/export": (2, 3600),
+    "/api/account": (3, 3600),
+    "/onboarding/create-tenant": (5, 3600),
+    # Public consent endpoint — prevent bulk scripted writes
+    "/api/consent": (10, 3600),
 }
 
 _DEFAULT_RATE_LIMIT = (60, 60)  # 60 requests per minute for other endpoints
@@ -287,6 +296,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 app.include_router(health.router)
 app.include_router(legal_routes.router)
+app.include_router(consent_routes.router)
 app.include_router(account.router)
 app.include_router(admin_config.router)
 app.include_router(chat_routes.router)
@@ -307,6 +317,8 @@ app.include_router(analytics.router)
 app.include_router(intelligence.router)
 app.include_router(leads.router)
 app.include_router(notifications.router)
+app.include_router(push_routes.router)
+app.include_router(content_ideas_routes.router)
 app.include_router(outreach.router)
 app.include_router(documents.router)
 app.include_router(settings.router)

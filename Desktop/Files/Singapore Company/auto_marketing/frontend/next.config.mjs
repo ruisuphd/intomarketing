@@ -47,7 +47,39 @@ const securityHeaders = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(), payment=()",
   },
+  // Prevent clickjacking – also covered by frame-ancestors in CSP but belt-and-suspenders
+  { key: "X-Frame-Options", value: "DENY" },
 ];
+
+// ── Content-Security-Policy (Report-Only: monitor violations before enforcing) ─
+// Switch key to "Content-Security-Policy" after 1 week of clean reports at /api/consent/csp-report
+const _apiOrigin = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
+const _cspDirectives = [
+  "default-src 'self'",
+  // 'unsafe-inline' required by Next.js hydration scripts and Sentry loader
+  "script-src 'self' 'unsafe-inline' https://js.stripe.com",
+  "style-src 'self' 'unsafe-inline'",
+  [
+    "connect-src 'self'",
+    "https://*.sentry.io",
+    "https://*.googleapis.com",
+    "wss://*.googleapis.com",
+    _apiOrigin,
+  ]
+    .filter(Boolean)
+    .join(" "),
+  "img-src 'self' data: blob: https:",
+  "font-src 'self'",
+  "frame-src https://js.stripe.com https://hooks.stripe.com https://accounts.google.com",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "report-uri /api/consent/csp-report",
+];
+securityHeaders.push({
+  key: "Content-Security-Policy-Report-Only",
+  value: _cspDirectives.join("; "),
+});
 
 if (isProduction) {
   securityHeaders.push({

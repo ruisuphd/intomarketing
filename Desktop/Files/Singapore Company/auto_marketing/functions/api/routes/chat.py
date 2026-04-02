@@ -12,9 +12,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.middleware.legal import require_legal_acceptance_verified
 from shared.chat_schema import ChatStructuredReply
+from shared.datetime_utils import coerce_datetime
 from shared.errors import RATE_LIMITED, build_error_body
 from shared.usage_limits import check_limit, increment_usage
-from shared.firestore_client import update_tenant
+from shared.firestore_client import get_tenant, query_docs, update_tenant
 from shared.gemini_client import GeminiClient, _capture_healing_event, _extract_json
 from shared.logger import get_logger
 from shared.models import TenantProfile
@@ -76,6 +77,84 @@ Rules:
 - Never mention JSON or technical internals to the user.
 - If asked something outside marketing/settings, gently redirect to your purpose.
 """
+
+
+def _detect_intent(text: str) -> str | None:
+    """Return intent tag from the user's last message, or None."""
+    low = text.lower()
+    if any(k in low for k in ("write a post", "generate a post", "create a post", "draft a post")):
+        return "generate_post"
+    if any(k in low for k in ("hot leads", "show leads", "my leads", "top leads", "lead list")):
+        return "show_leads"
+    if any(k in low for k in ("latest intelligence", "competitor intel", "market intel", "industry intel", "competitor signal")):
+        return "show_intelligence"
+    if any(k in low for k in ("what should i post", "what to post", "post ideas", "content ideas", "content suggestions")):
+        return "content_ideas"
+    if any(k in low for k in ("summarize competitors", "competitor summary", "competitor update")):
+        return "summarize_competitors"
+    return None
+
+
+def _build_intent_context(intent: str, tenant_id: str) -> str:
+    """Fetch live data for the given intent and return a context block for the system prompt."""
+    from datetime import datetime, timedelta, timezone
+    try:
+        if intent == "show_leads":
+            leads = query_docs(
+                "qualified_leads",
+                order_by="-score",
+                limit=5,
+                tenant_id=tenant_id,
+            )
+            if not leads:
+                return "\n\n## Live Lead Data\nNo qualified leads found yet."
+            rows = "\n".join(
+                f"- {l.get('company_name') or l.get('company') or 'Unknown'} | "
+                f"score={l.get('score', 0)} | status={l.get('status', 'new')}"
+                for l in leads
+            )
+            return f"\n\n## Live Lead Data (top 5 by score)\n{rows}"
+
+        if intent == "show_intelligence":
+            items = query_docs(
+                "intelligence_items",
+                order_by="-gathered_at",
+                limit=5,
+                tenant_id=tenant_id,
+            )
+            if not items:
+                return "\n\n## Live Intelligence\nNo intelligence items found yet."
+            rows = "\n".join(
+                f"- {item.get('title') or item.get('summary', '')[:80]}"
+                for item in items
+            )
+            return f"\n\n## Latest Intelligence Items\n{rows}"
+
+        if intent in ("content_ideas", "summarize_competitors", "generate_post"):
+            tenant_doc = get_tenant(tenant_id) or {}
+            ideas: list[dict] = tenant_doc.get("content_ideas") or []
+            competitors: list[str] = tenant_doc.get("competitor_names") or []
+            intel = query_docs(
+                "intelligence_items",
+                filters=[("competitor_id", "!=", None)] if intent == "summarize_competitors" else None,
+                order_by="-gathered_at",
+                limit=5,
+                tenant_id=tenant_id,
+            )
+            parts = []
+            if ideas:
+                top = [i.get("text", "") for i in ideas[:3] if i.get("text")]
+                if top:
+                    parts.append("## Queued Content Ideas\n" + "\n".join(f"- {t}" for t in top))
+            if competitors:
+                parts.append("## Competitor Names\n" + ", ".join(competitors))
+            if intel:
+                rows = "\n".join(f"- {item.get('title', '')[:80]}" for item in intel)
+                parts.append(f"## Recent Intelligence Signals\n{rows}")
+            return ("\n\n" + "\n\n".join(parts)) if parts else ""
+    except Exception:
+        pass
+    return ""
 
 
 class ChatMessage(BaseModel):
@@ -191,6 +270,14 @@ async def chat(
         profile_json=json.dumps(profile, indent=2),
         fields_doc=fields_doc,
     )
+
+    # Intent routing: enrich system prompt with live data if relevant
+    last_user_text = body.messages[-1].content if body.messages else ""
+    intent = _detect_intent(last_user_text)
+    if intent:
+        intent_context = _build_intent_context(intent, tenant.tenant_id)
+        if intent_context:
+            system_prompt += intent_context
 
     # Build the conversation as a single user message for Gemini
     # (Gemini Flash Lite does not support multi-turn via generate_content easily,
@@ -349,6 +436,14 @@ async def chat_stream(
         profile_json=json.dumps(profile, indent=2),
         fields_doc=fields_doc,
     )
+
+    # Intent routing: enrich system prompt with live data (same as non-streaming path)
+    last_user_text = body.messages[-1].content if body.messages else ""
+    intent = _detect_intent(last_user_text)
+    if intent:
+        intent_context = _build_intent_context(intent, tenant.tenant_id)
+        if intent_context:
+            system_prompt += intent_context
 
     history_parts = []
     for msg in body.messages[:-1]:

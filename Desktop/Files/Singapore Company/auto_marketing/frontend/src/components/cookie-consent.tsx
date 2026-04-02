@@ -7,6 +7,7 @@ import {
   getStoredConsent,
   saveStoredConsent,
   OPEN_COOKIE_PREFERENCES_EVENT,
+  CONSENT_VERSION,
 } from "@/lib/cookie-consent-storage";
 
 export {
@@ -80,34 +81,48 @@ function ConsentPanel(props: {
 
       {showPrefs && (
         <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-          <label className="flex cursor-default items-center gap-3 text-sm">
-            <input type="checkbox" checked disabled className="rounded border-gray-300" />
+          <label className="flex cursor-default items-start gap-3 text-sm">
+            <input type="checkbox" checked disabled className="mt-0.5 rounded border-gray-300" />
             <span>
-              <strong>Essential</strong> — required for the app to function
+              <strong>Essential</strong>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Required for login, session management, and security features.
+              </span>
             </span>
           </label>
-          <label className="flex cursor-pointer items-center gap-3 text-sm">
+          <label className="flex cursor-pointer items-start gap-3 text-sm">
             <input
               type="checkbox"
               checked={analytics}
               onChange={(e) => onAnalyticsChange(e.target.checked)}
-              className="rounded border-gray-300"
+              className="mt-0.5 rounded border-gray-300"
             />
             <span>
-              <strong>Analytics</strong> — error tracking to improve reliability
+              <strong>Analytics</strong>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Error tracking via Sentry to improve reliability. No advertising profiles are built.
+              </span>
             </span>
           </label>
-          <label className="flex cursor-pointer items-center gap-3 text-sm">
+          <label className="flex cursor-pointer items-start gap-3 text-sm">
             <input
               type="checkbox"
               checked={marketing}
               onChange={(e) => onMarketingChange(e.target.checked)}
-              className="rounded border-gray-300"
+              className="mt-0.5 rounded border-gray-300"
             />
             <span>
-              <strong>Marketing</strong> — currently none, reserved for future use
+              <strong>Marketing</strong>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Currently inactive — reserved for future use.
+              </span>
             </span>
           </label>
+          <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">
+            Your data is processed and stored in Singapore (GCP region: asia-southeast1) in
+            compliance with the Personal Data Protection Act 2012 (PDPA). In the event of a
+            confirmed data breach, we will notify affected users within 3 business days.
+          </p>
         </div>
       )}
 
@@ -159,10 +174,29 @@ export default function CookieConsentBanner() {
     setShowPrefs(false);
   }, []);
 
-  const accept = useCallback((consent: CookieConsent) => {
-    saveStoredConsent(consent);
-    closeUi();
-  }, [closeUi]);
+  const accept = useCallback(
+    (consent: CookieConsent) => {
+      const withVersion: CookieConsent = { ...consent, version: CONSENT_VERSION };
+      saveStoredConsent(withVersion);
+      // Fire-and-forget: record consent server-side for GDPR/PDPA audit trail.
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (apiUrl) {
+        fetch(`${apiUrl}/api/consent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: CONSENT_VERSION,
+            analytics: withVersion.analytics,
+            marketing: withVersion.marketing,
+          }),
+        }).catch(() => {
+          // Non-blocking — consent is already saved locally.
+        });
+      }
+      closeUi();
+    },
+    [closeUi],
+  );
 
   useEffect(() => {
     if (!getStoredConsent()) setUiMode("banner");
@@ -203,6 +237,7 @@ export default function CookieConsentBanner() {
           analytics: true,
           marketing: true,
           timestamp: new Date().toISOString(),
+          version: CONSENT_VERSION,
         })
       }
       onSavePreferences={() =>
@@ -211,6 +246,7 @@ export default function CookieConsentBanner() {
           analytics,
           marketing,
           timestamp: new Date().toISOString(),
+          version: CONSENT_VERSION,
         })
       }
       onRejectNonEssential={() =>
@@ -219,6 +255,7 @@ export default function CookieConsentBanner() {
           analytics: false,
           marketing: false,
           timestamp: new Date().toISOString(),
+          version: CONSENT_VERSION,
         })
       }
       onManagePreferences={() => setShowPrefs(true)}

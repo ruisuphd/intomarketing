@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --apple-text: 29 29 31;         /* #1d1d1f */
+  --apple-secondary: 134 134 139; /* #86868b */
+  --apple-bg: 245 245 247;        /* #f5f5f7 */
+  --apple-card: 255 255 255;      /* #ffffff */
+  --apple-border: 210 210 215;    /* #d2d2d7 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --apple-text: 242 242 247;    /* near-white */
+    --apple-secondary: 152 152 157;
+    --apple-bg: 28 28 30;         /* iOS dark bg */
+    --apple-card: 44 44 46;       /* iOS dark card */
+    --apple-border: 58 58 60;
+  }
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
@@ -9,8 +27,8 @@ html {
 }
 
 body {
-  color: #1d1d1f;
-  background: #f5f5f7;
+  color: rgb(var(--apple-text));
+  background: rgb(var(--apple-bg));
 }
 
 ::selection {

@@ -75,9 +75,12 @@ export default function IntelligenceSection({ billing }: IntelligenceSectionProp
       ) : error ? (
         <p className="mb-3 text-sm text-red-500">{error}</p>
       ) : items.length === 0 ? (
-        <p className="py-8 text-center text-sm text-apple-secondary">
-          No intelligence items yet. Check back after the next pipeline run.
-        </p>
+        <div className="rounded-apple bg-apple-card px-5 py-8 text-center shadow-apple">
+          <p className="text-sm font-medium">No intelligence signals yet</p>
+          <p className="mt-1 text-sm text-apple-secondary">
+            Signals appear here after your first pipeline run at 07:00 SGT.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           {items.map((item, i) => (

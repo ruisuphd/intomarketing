@@ -285,6 +285,27 @@ async def linkedin_callback(
         if lid:
             author_urn = f"urn:li:person:{lid}"
 
+    # Fetch the organization URN the user administers.
+    # Required for the LinkedIn Analytics API (organizationalEntityShareStatistics).
+    # This requires the r_organization_social scope (Marketing Developer Platform).
+    org_urn: str | None = None
+    try:
+        async with httpx.AsyncClient() as client:
+            org_resp = await client.get(
+                "https://api.linkedin.com/v2/organizationalEntityAcls"
+                "?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organizationalTarget))",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+        if org_resp.status_code == 200:
+            elements = org_resp.json().get("elements", [])
+            if elements:
+                org_urn = elements[0].get("organizationalTarget")
+    except Exception as org_exc:
+        logger.info(
+            "oauth.linkedin_org_urn_skipped",
+            extra={"reason": str(org_exc)},
+        )
+
     expires_at = datetime.now(timezone.utc) + timedelta(days=60)
     creds = PlatformCredentials(
         access_token=access_token,
@@ -292,8 +313,12 @@ async def linkedin_callback(
         expires_at=expires_at,
         platform_id=author_urn,
     )
+    creds_dict = creds.model_dump(mode="json")
+    if org_urn:
+        creds_dict["org_urn"] = org_urn
+
     platform_creds = tenant_doc.get("platform_credentials") or {}
-    platform_creds["linkedin"] = creds.model_dump(mode="json")
+    platform_creds["linkedin"] = creds_dict
     update_tenant(tenant_id, {"platform_credentials": platform_creds})
 
     logger.info("oauth.linkedin_connected", extra={"tenant_id": tenant_id})

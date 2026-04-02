@@ -63,8 +63,9 @@ export default function DashboardPage() {
   const [pageError, setPageError] = useState("");
   const [dismissedVerification, setDismissedVerification] = useState(false);
   const [overviewPrefetch, setOverviewPrefetch] = useState<
-    Pick<DashboardBootstrapResponse, "usage" | "pipeline_status" | "oauth_status"> | null
+    Pick<DashboardBootstrapResponse, "usage" | "pipeline_status" | "oauth_status" | "competitor_signal"> | null
   >(null);
+  const [streakCount, setStreakCount] = useState<number>(0);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -94,10 +95,12 @@ export default function DashboardPage() {
       setSettings(settingsData);
       setCompanyName(settingsData.company_name || "");
       setBilling(billingState);
+      setStreakCount(settingsData.approval_streak ?? 0);
       setOverviewPrefetch({
         usage: boot.usage,
         pipeline_status: boot.pipeline_status,
         oauth_status: boot.oauth_status,
+        competitor_signal: boot.competitor_signal,
       });
     } catch (err: unknown) {
       setOverviewPrefetch(null);
@@ -114,13 +117,13 @@ export default function DashboardPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [router, user]);
+  }, [router, user?.uid]);
 
   useEffect(() => {
     if (!authLoading && user) {
       loadDashboard();
     }
-  }, [authLoading, user, loadDashboard]);
+  }, [authLoading, user?.uid, loadDashboard]);
 
   useEffect(() => {
     if (!billing || pageError) return;
@@ -206,6 +209,7 @@ export default function DashboardPage() {
         activeSection={activeSection}
         billing={billing}
         onSectionSelect={setActiveSection}
+        streakCount={streakCount}
       />
 
       {user && !user.emailVerified && user.providerData?.[0]?.providerId === "password" && !dismissedVerification && (
@@ -270,7 +274,11 @@ export default function DashboardPage() {
           <>
             <ErrorBoundary>
               <LazySection anchorId="content" minHeight="380px">
-                <ContentDraftsSection billing={billing} platforms={platformsEnabled} />
+                <ContentDraftsSection
+                  billing={billing}
+                  platforms={platformsEnabled}
+                  oauthStatus={overviewPrefetch?.oauth_status}
+                />
               </LazySection>
             </ErrorBoundary>
             <ErrorBoundary>

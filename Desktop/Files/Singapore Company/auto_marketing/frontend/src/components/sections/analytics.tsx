@@ -127,8 +127,11 @@ export default function AnalyticsSection({ billing, platforms }: AnalyticsSectio
         <>
           {!data?.live_metrics_available && (
             <Notice tone="warning">
-              Live engagement from connected platforms is not fully wired yet. Charts may use placeholder or historical
-              snapshots until OAuth and analytics sync are complete for your accounts.
+              Connect LinkedIn or X in{" "}
+              <a href="/settings#platforms" className="underline">
+                Settings → Platforms
+              </a>{" "}
+              to see real engagement data. Charts currently show placeholder snapshots.
             </Notice>
           )}
 

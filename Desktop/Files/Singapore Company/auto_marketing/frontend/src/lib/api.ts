@@ -1,5 +1,3 @@
-import { onAuthStateChanged } from "firebase/auth";
-
 import { auth } from "./firebase";
 
 function normalizeApiBase(url: string): string {
@@ -23,8 +21,6 @@ export function getApiBase(): string {
   }
   return "";
 }
-
-let authReadyPromise: Promise<void> | null = null;
 
 export type ApiErrorOptions = {
   code?: string;
@@ -121,17 +117,8 @@ function parseApiError(
 }
 
 async function waitForAuthReady() {
-  const firebaseAuth = auth;
-  if (!firebaseAuth || firebaseAuth.currentUser) return;
-  if (!authReadyPromise) {
-    authReadyPromise = new Promise((resolve) => {
-      const unsubscribe = onAuthStateChanged(firebaseAuth, () => {
-        unsubscribe();
-        resolve();
-      });
-    });
-  }
-  await authReadyPromise;
+  if (!auth) return;
+  await auth.authStateReady();
 }
 
 async function getAuthHeaders(forceRefresh = false): Promise<Record<string, string>> {
@@ -163,6 +150,16 @@ async function buildFetchHeaders(
 
 const GET_RETRY_STATUSES = new Set([502, 503, 504]);
 const GET_MAX_RETRIES = 2;
+
+/** After fetchWithAuthRetry, a 401 means both normal and force-refreshed tokens were rejected. */
+async function signOutAndRedirectLogin(): Promise<void> {
+  if (typeof window === "undefined" || !auth?.currentUser) return;
+  const path = window.location.pathname;
+  if (path.startsWith("/login") || path.startsWith("/signup")) return;
+  const { signOut } = await import("./firebase");
+  await signOut().catch(() => {});
+  window.location.assign("/login?reason=session");
+}
 
 async function fetchWithAuthRetry(
   url: string,
@@ -198,6 +195,9 @@ export async function apiFetch<T = any>(
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      await signOutAndRedirectLogin();
+    }
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     const err = parseApiError(res.status, body, res);
 
@@ -259,6 +259,9 @@ export async function apiChatStream(
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      await signOutAndRedirectLogin();
+    }
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     const err = parseApiError(res.status, body, res);
 
@@ -340,6 +343,9 @@ export async function apiFetchBlob(
   const url = `${getApiBase()}${path}`;
   let res = await fetchWithAuthRetry(url, options, requestId);
   if (!res.ok) {
+    if (res.status === 401) {
+      await signOutAndRedirectLogin();
+    }
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throw parseApiError(res.status, body, res);
   }

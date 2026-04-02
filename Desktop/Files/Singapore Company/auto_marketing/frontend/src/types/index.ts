@@ -36,6 +36,7 @@ export interface TenantProfile {
   legal_terms_version?: string | null;
   legal_terms_accepted_at?: string | null;
   legal_docs_current_version?: string;
+  approval_streak?: number;
 }
 
 /** GET /api/dashboard/bootstrap — parallel aggregate for dashboard shell */
@@ -68,6 +69,11 @@ export interface DashboardBootstrapResponse {
     linkedin_expires_at?: string | null;
     x_twitter_expires_at?: string | null;
   };
+  competitor_signal?: {
+    title: string;
+    source_name: string;
+    postability_score: number;
+  } | null;
 }
 
 export interface BillingSummary {

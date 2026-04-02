@@ -42,9 +42,19 @@ interface NewsletterEvent {
   subject?: string;
 }
 
+interface PipelineCalendarEvent {
+  id: string;
+  type: string;
+  title: string;
+  scheduled_for: string | null;
+  status: string;
+  reference_id?: string;
+}
+
 export default function CalendarSection({ billing, platforms }: CalendarSectionProps) {
   const [drafts, setDrafts] = useState<DraftContent[]>([]);
   const [newslettersByDate, setNewslettersByDate] = useState<Record<string, NewsletterEvent[]>>({});
+  const [pipelineEvents, setPipelineEvents] = useState<PipelineCalendarEvent[]>([]);
   const [error, setError] = useState("");
   const weekDates = getWeekDates();
 
@@ -54,6 +64,7 @@ export default function CalendarSection({ billing, platforms }: CalendarSectionP
     if (!billing || !hasTierAccess(billing, "starter")) {
       setDrafts([]);
       setNewslettersByDate({});
+      setPipelineEvents([]);
       setError("");
       return;
     }
@@ -63,10 +74,12 @@ export default function CalendarSection({ billing, platforms }: CalendarSectionP
         const data = await apiFetch<{
           drafts?: DraftContent[];
           newsletters_by_date?: Record<string, NewsletterEvent[]>;
+          calendar_events?: PipelineCalendarEvent[];
         }>("/api/calendar/events");
         if (!cancelled) {
           setDrafts(data.drafts || []);
           setNewslettersByDate(data.newsletters_by_date || {});
+          setPipelineEvents(data.calendar_events || []);
           setError("");
         }
       } catch (e: any) {
@@ -89,7 +102,7 @@ export default function CalendarSection({ billing, platforms }: CalendarSectionP
   }, [billing]);
 
   const enabledPlatforms = new Set(platforms);
-  const byDate: Record<string, (DraftContent | NewsletterEvent)[]> = {};
+  const byDate: Record<string, (DraftContent | NewsletterEvent | PipelineCalendarEvent)[]> = {};
   for (const d of drafts) {
     const date = d.batch_date || "";
     if (!byDate[date]) byDate[date] = [];
@@ -98,6 +111,13 @@ export default function CalendarSection({ billing, platforms }: CalendarSectionP
   for (const [date, items] of Object.entries(newslettersByDate)) {
     if (!byDate[date]) byDate[date] = [];
     byDate[date].push(...items);
+  }
+  // Merge pipeline calendar events (outreach, newsletters scheduled by AI pipeline).
+  for (const ev of pipelineEvents) {
+    const date = ev.scheduled_for ? ev.scheduled_for.split("T")[0] : "";
+    if (!date) continue;
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push(ev);
   }
 
   const [draggedDraft, setDraggedDraft] = useState<DraftContent | null>(null);
@@ -163,7 +183,7 @@ export default function CalendarSection({ billing, platforms }: CalendarSectionP
             </div>
           ) : (
             <>
-              <div className="hidden sm:grid sm:grid-cols-7 sm:gap-2">
+              <div className="hidden sm:block sm:overflow-x-auto"><div className="grid sm:grid-cols-7 sm:gap-2 min-w-[600px]">
                 {DAYS.map((day, i) => {
                   const dateStr = weekDates[i];
                   const suggestedTime = ["09:00 AM", "12:30 PM", "05:15 PM", "08:00 AM", "01:00 PM", "06:45 PM", "10:00 AM"][i % 7];
@@ -207,7 +227,7 @@ export default function CalendarSection({ billing, platforms }: CalendarSectionP
                     </div>
                   );
                 })}
-              </div>
+              </div></div>
 
               <div className="space-y-2 sm:hidden">
                 {DAYS.map((day, i) => {

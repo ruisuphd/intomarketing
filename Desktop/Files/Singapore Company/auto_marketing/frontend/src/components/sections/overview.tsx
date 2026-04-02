@@ -16,7 +16,7 @@ interface OverviewSectionProps {
   /** From GET /api/dashboard/bootstrap — avoids duplicate usage/pipeline/oauth fetches on first paint */
   overviewPrefetch?: Pick<
     DashboardBootstrapResponse,
-    "usage" | "pipeline_status" | "oauth_status"
+    "usage" | "pipeline_status" | "oauth_status" | "competitor_signal"
   >;
 }
 
@@ -61,6 +61,10 @@ export default function OverviewSection({
   const [pipelineTriggering, setPipelineTriggering] = useState(false);
   const [pipelineTriggerMessage, setPipelineTriggerMessage] = useState("");
   const [pipelineTriggerError, setPipelineTriggerError] = useState("");
+  const [healthScore, setHealthScore] = useState<{ score: number; label: string; breakdown: Record<string, number> } | null>(null);
+  const [competitorSignal, setCompetitorSignal] = useState<{ title: string; source_name: string; postability_score: number } | null>(null);
+  const [signalDismissed, setSignalDismissed] = useState(false);
+  const [goalsData, setGoalsData] = useState<{ goals: Record<string, number>; actuals: Record<string, number> } | null>(null);
   const consumedPrefetch = useRef(false);
 
   useEffect(() => {
@@ -137,6 +141,14 @@ export default function OverviewSection({
       void loadLeadCount();
     }
 
+    apiFetch<{ score: number; label: string; breakdown: Record<string, number> }>("/api/dashboard/health-score")
+      .then((d) => { if (!cancelled) setHealthScore(d); })
+      .catch(() => {/* non-critical */});
+
+    apiFetch<{ goals: Record<string, number>; actuals: Record<string, number> }>("/api/settings/goals")
+      .then((d) => { if (!cancelled) setGoalsData(d); })
+      .catch(() => {/* non-critical */});
+
     const usePrefetch =
       overviewPrefetch && !consumedPrefetch.current;
     if (usePrefetch) {
@@ -147,6 +159,9 @@ export default function OverviewSection({
         linkedin: overviewPrefetch.oauth_status.linkedin,
         x_twitter: overviewPrefetch.oauth_status.x_twitter,
       });
+      if (overviewPrefetch.competitor_signal) {
+        setCompetitorSignal(overviewPrefetch.competitor_signal);
+      }
     } else {
       apiFetch<UsageSummary>("/api/usage").then((u) => {
         if (!cancelled) setUsage(u);
@@ -220,6 +235,72 @@ export default function OverviewSection({
         ))}
       </div>
 
+      {healthScore && (
+        <div className="mt-4 rounded-apple bg-apple-card p-5 shadow-apple">
+          <div className="mb-3 flex items-center gap-4">
+            <div className="relative h-16 w-16 shrink-0">
+              <svg viewBox="0 0 36 36" className="h-16 w-16 -rotate-90" role="img" aria-label={`Health score: ${healthScore.score} out of 100`}>
+                <circle cx="18" cy="18" r="15.9155" fill="none" stroke="rgb(var(--apple-border))" strokeWidth="3" />
+                <circle
+                  cx="18" cy="18" r="15.9155" fill="none"
+                  stroke={healthScore.score >= 60 ? "#34c759" : healthScore.score >= 40 ? "#ff9f0a" : "#ff3b30"}
+                  strokeWidth="3"
+                  strokeDasharray={`${healthScore.score} ${100 - healthScore.score}`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{healthScore.score}</span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Marketing Health</p>
+              <p className="text-xs text-apple-secondary">{healthScore.label}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(healthScore.breakdown).map(([key, val]) => (
+              <span key={key} className="rounded-full bg-apple-bg px-2.5 py-0.5 text-xs text-apple-secondary capitalize">
+                {key} {val}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {competitorSignal && !signalDismissed && (
+        <div className="mt-4 rounded-apple border border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-900 p-4 shadow-apple">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">
+                ⚡ {competitorSignal.source_name} just made a move
+              </p>
+              <p className="mt-1 text-sm text-orange-700 dark:text-orange-400 line-clamp-2">
+                {competitorSignal.title}
+              </p>
+              <p className="mt-1 text-xs text-orange-600 dark:text-orange-500">
+                Turn this into a content opportunity.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSignalDismissed(true)}
+              className="shrink-0 text-orange-400 hover:text-orange-600 dark:text-orange-600 dark:hover:text-orange-400"
+              aria-label="Dismiss competitor signal"
+            >
+              ✕
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              document.getElementById("content")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            className="mt-3 rounded-apple-sm bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700"
+          >
+            Draft a response
+          </button>
+        </div>
+      )}
+
       {billing &&
         hasTierAccess(billing, "starter") &&
         !checklistDismissed &&
@@ -279,6 +360,47 @@ export default function OverviewSection({
               )}
             </li>
           </ul>
+        </div>
+      )}
+
+      {goalsData && (goalsData.goals.post_frequency > 0 || goalsData.goals.lead_volume > 0) && (
+        <div className="mt-4 rounded-apple bg-apple-card p-5 shadow-apple">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Monthly goals</h3>
+            <Link href="/settings?tab=notifications" className="text-xs text-apple-blue hover:underline">
+              Edit goals
+            </Link>
+          </div>
+          <div className="space-y-3">
+            {goalsData.goals.post_frequency > 0 && (
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs text-apple-secondary">
+                  <span>Posts published</span>
+                  <span>{goalsData.actuals.posts_this_month} / {goalsData.goals.post_frequency}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-apple-bg">
+                  <div
+                    className="h-full rounded-full bg-apple-blue transition-all"
+                    style={{ width: `${Math.min((goalsData.actuals.posts_this_month / goalsData.goals.post_frequency) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {goalsData.goals.lead_volume > 0 && (
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs text-apple-secondary">
+                  <span>New leads</span>
+                  <span>{goalsData.actuals.leads_this_month} / {goalsData.goals.lead_volume}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-apple-bg">
+                  <div
+                    className="h-full rounded-full bg-green-500 transition-all"
+                    style={{ width: `${Math.min((goalsData.actuals.leads_this_month / goalsData.goals.lead_volume) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

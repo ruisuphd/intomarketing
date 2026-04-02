@@ -206,8 +206,8 @@ export default function ChatWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 flex w-[360px] max-w-[calc(100vw-3rem)] flex-col rounded-apple bg-white shadow-2xl ring-1 ring-apple-border"
-          style={{ height: "520px" }}
+        <div className="fixed bottom-24 right-6 z-50 flex w-[360px] max-w-[calc(100vw-3rem)] flex-col rounded-apple bg-apple-card shadow-2xl ring-1 ring-apple-border"
+          style={{ height: "600px" }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 rounded-t-apple border-b border-apple-border bg-apple-card px-4 py-3">
@@ -278,8 +278,28 @@ export default function ChatWidget() {
             <div ref={bottomRef} />
           </div>
 
+          {/* Quick-action buttons */}
+          {!loading && messages.length <= 1 && (
+            <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+              {[
+                { label: "Write a post", msg: "Write a post for me" },
+                { label: "Hot leads", msg: "Show my hot leads" },
+                { label: "Latest intelligence", msg: "Show latest intelligence" },
+                { label: "What should I post?", msg: "What should I post today?" },
+              ].map((action) => (
+                <button
+                  key={action.label}
+                  onClick={() => sendMessage(action.msg)}
+                  className="rounded-full border border-apple-border bg-apple-bg px-3 py-1 text-xs font-medium text-apple-text hover:bg-apple-card transition-colors"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Suggestion chips */}
-          {suggestions.length > 0 && !loading && (
+          {suggestions.length > 0 && !loading && messages.length > 1 && (
             <div className="flex flex-wrap gap-1.5 px-4 pb-2">
               {suggestions.map((q, i) => (
                 <button

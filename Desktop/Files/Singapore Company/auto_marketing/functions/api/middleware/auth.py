@@ -20,14 +20,31 @@ logger = get_logger("auth_middleware")
 _bearer = HTTPBearer(auto_error=False)
 
 
+def _firebase_project_id() -> str | None:
+    for key in ("FIREBASE_PROJECT_ID", "GCP_PROJECT_ID", "GOOGLE_CLOUD_PROJECT"):
+        raw = (os.getenv(key) or "").strip()
+        if raw:
+            return raw
+    return None
+
+
+def _check_revoked() -> bool:
+    raw = (os.getenv("FIREBASE_CHECK_REVOKED") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _verify_firebase_token(token: str) -> dict:
     import firebase_admin
     from firebase_admin import auth as firebase_auth
 
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
+        project_id = _firebase_project_id()
+        if project_id:
+            firebase_admin.initialize_app(options={"projectId": project_id})
+        else:
+            firebase_admin.initialize_app()
 
-    return firebase_auth.verify_id_token(token, check_revoked=True)
+    return firebase_auth.verify_id_token(token, check_revoked=_check_revoked())
 
 
 def _build_default_tenant(uid: str, email: str) -> dict[str, Any]:
@@ -69,7 +86,14 @@ async def get_current_user(
     try:
         decoded = _verify_firebase_token(credentials.credentials)
     except Exception as exc:
-        logger.warning("auth.invalid_token", extra={"error": str(exc)})
+        logger.warning(
+            "auth.invalid_token",
+            extra={
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "check_revoked": _check_revoked(),
+            },
+        )
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     uid = decoded.get("uid", "")

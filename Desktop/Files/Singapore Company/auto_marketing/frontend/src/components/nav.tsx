@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { planBadgeLabel } from "@/lib/billing";
 import { signOut } from "@/lib/firebase";
 import NotificationPanel from "@/components/notification-panel";
+import { CHANGELOG_VERSION } from "@/lib/changelog-version";
 import type { BillingSummary } from "@/types";
 
 const SECTIONS = [
@@ -24,6 +25,7 @@ interface NavProps {
   activeSection?: string;
   billing?: BillingSummary | null;
   onSectionSelect?: (sectionId: string) => void;
+  streakCount?: number;
 }
 
 export default function Nav({
@@ -31,9 +33,16 @@ export default function Nav({
   activeSection,
   billing,
   onSectionSelect,
+  streakCount,
 }: NavProps) {
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [changelogUnread, setChangelogUnread] = useState(false);
+
+  useEffect(() => {
+    const seen = localStorage.getItem("intomarketing_changelog_last_seen");
+    setChangelogUnread(seen !== CHANGELOG_VERSION);
+  }, []);
   const initials = (user?.displayName || user?.email || "U")
     .split(/[\s@]/)
     .map((w) => w[0])
@@ -69,6 +78,14 @@ export default function Nav({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {streakCount != null && streakCount > 0 && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-600"
+              title={`${streakCount}-day approval streak`}
+            >
+              🔥 {streakCount}
+            </span>
+          )}
           <NotificationPanel
             onNavigate={(sectionId) => {
               onSectionSelect?.(sectionId);
@@ -131,10 +148,16 @@ export default function Nav({
                   </Link>
                   <Link
                     href="/changelog"
-                    onClick={() => setMenuOpen(false)}
-                    className="block rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"
+                    onClick={() => { setMenuOpen(false); setChangelogUnread(false); }}
+                    className="flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-apple-text hover:bg-apple-bg"
                   >
-                    What&apos;s New
+                    <span className="relative">
+                      What&apos;s New
+                      {changelogUnread && (
+                        <span className="absolute -right-2 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
+                      )}
+                    </span>
+                    <kbd className="font-mono text-[10px] border border-apple-border rounded px-1 py-0.5 text-apple-secondary">⌘K</kbd>
                   </Link>
                   <Link
                     href="/help"

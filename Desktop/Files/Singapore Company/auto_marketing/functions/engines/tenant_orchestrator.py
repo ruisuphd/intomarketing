@@ -12,6 +12,7 @@ from shared.firestore_client import query_docs
 from shared.logger import get_logger
 from shared.models import TenantProfile
 from shared.pipeline_runs import pipeline_run_status_from_result, record_pipeline_run
+from shared.push_client import send_push
 
 logger = get_logger("tenant_orchestrator")
 
@@ -87,6 +88,14 @@ async def run_all_active_tenants() -> dict:
                 status=pipeline_run_status_from_result(result),
                 result=result,
             )
+            drafts_n = result.get("drafts_generated", 0)
+            if drafts_n and pipeline_run_status_from_result(result) not in ("skipped", "failed"):
+                send_push(
+                    tenant_id=tenant_id,
+                    title="Pipeline complete",
+                    body=f"{drafts_n} new draft{'s' if drafts_n != 1 else ''} ready to review.",
+                    section_id="content",
+                )
         except asyncio.TimeoutError:
             elapsed_s = round(time.monotonic() - t0, 1)
             timed_out += 1

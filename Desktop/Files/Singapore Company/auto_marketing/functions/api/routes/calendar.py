@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 async def list_calendar_events(
     tenant: TenantProfile = Depends(require_access("starter", "pro")),
 ):
-    """Return scheduled drafts and newsletter campaigns for the calendar view."""
+    """Return scheduled drafts, newsletter campaigns, and pipeline calendar events."""
     drafts = query_docs(
         "drafts",
         filters=[("status", "==", "scheduled")],
@@ -29,6 +29,14 @@ async def list_calendar_events(
         tenant_id=tenant.tenant_id,
         limit=50,
     )
+    # calendar_events are written by calendar_manager.py during the daily pipeline.
+    # They represent outreach, newsletter, and other scheduled pipeline activities.
+    pipeline_calendar_events = query_docs(
+        "calendar_events",
+        tenant_id=tenant.tenant_id,
+        limit=100,
+    )
+
     campaigns_by_date: dict[str, list[dict]] = {}
     for c in newsletter_campaigns:
         dt = coerce_datetime(c.get("scheduled_at"))
@@ -43,7 +51,24 @@ async def list_calendar_events(
                     "subject": c.get("subject", ""),
                 }
             )
+
+    # Build a normalised list of pipeline calendar events for the frontend to merge.
+    calendar_events_list: list[dict] = []
+    for ev in pipeline_calendar_events:
+        dt = coerce_datetime(ev.get("scheduled_for"))
+        calendar_events_list.append(
+            {
+                "id": ev.get("id"),
+                "type": ev.get("event_type", "pipeline"),
+                "title": ev.get("title", ""),
+                "scheduled_for": dt.isoformat() if dt else ev.get("scheduled_for"),
+                "status": ev.get("status", "scheduled"),
+                "reference_id": ev.get("reference_id"),
+            }
+        )
+
     return {
         "drafts": drafts,
         "newsletters_by_date": campaigns_by_date,
+        "calendar_events": calendar_events_list,
     }

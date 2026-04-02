@@ -18,10 +18,12 @@ from shared.firestore_client import (
     count_docs,
     delete_doc,
     get_doc,
+    get_tenant,
     query_docs,
     query_docs_paginated,
     set_doc,
     update_doc,
+    update_tenant,
 )
 from shared.logger import get_logger
 from shared.models import CalendarEvent, PublishingRecord, TenantProfile
@@ -30,6 +32,25 @@ from shared.platforms import PLATFORM_MAP, normalize_platforms
 logger = get_logger("api.drafts")
 
 router = APIRouter(prefix="/api/drafts", tags=["drafts"])
+
+
+def _update_approval_streak(tenant_id: str) -> int:
+    """Increment or reset the approval streak on the tenant doc. Returns new streak count."""
+    tenant_doc = get_tenant(tenant_id) or {}
+    now = datetime.now(timezone.utc)
+    streak = int(tenant_doc.get("approval_streak") or 0)
+    last_approved_raw = tenant_doc.get("streak_last_approved_at")
+    if last_approved_raw:
+        from shared.datetime_utils import coerce_datetime
+        last_approved = coerce_datetime(last_approved_raw)
+        if last_approved and (now - last_approved).total_seconds() > 36 * 3600:
+            streak = 0
+    streak += 1
+    update_tenant(tenant_id, {
+        "approval_streak": streak,
+        "streak_last_approved_at": now.isoformat(),
+    })
+    return streak
 
 
 def _default_scheduled_for(
@@ -289,7 +310,13 @@ async def update_draft_status(
     )
     updated_doc = {**existing_doc, **updates, "id": draft_id}
 
+    approval_streak = None
+    first_post = False
     if updated_doc.get("status") == "scheduled" and updated_doc.get("batch_date"):
+        # First-post detection: check BEFORE _sync_scheduled_records creates new records
+        prior_count = count_docs("publishing_records", tenant_id=tenant.tenant_id)
+        first_post = prior_count == 0
+
         _sync_scheduled_records(
             tenant_id=tenant.tenant_id,
             draft_id=draft_id,
@@ -297,8 +324,14 @@ async def update_draft_status(
             batch_date=updated_doc["batch_date"],
             scheduled_for=updated_doc["scheduled_for"],
         )
+        approval_streak = _update_approval_streak(tenant.tenant_id)
 
-    return {"ok": True, "draft": updated_doc}
+    result: dict = {"ok": True, "draft": updated_doc}
+    if approval_streak is not None:
+        result["approval_streak"] = approval_streak
+    if first_post:
+        result["first_post"] = True
+    return result
 
 
 def _cleanup_scheduled_draft(*, tenant_id: str, draft_id: str, draft_doc: dict) -> None:
@@ -327,6 +360,46 @@ def _cleanup_scheduled_draft(*, tenant_id: str, draft_id: str, draft_doc: dict) 
     from shared.firestore_client import batch_write
 
     batch_write(ops)
+
+
+class BulkApproveRequest(BaseModel):
+    draft_ids: list[str]
+
+
+@router.post("/bulk-approve")
+async def bulk_approve_drafts(
+    body: BulkApproveRequest,
+    tenant: TenantProfile = Depends(require_access_with_legal("starter", "pro")),
+):
+    """Schedule multiple drafts in one request. Returns count of approved drafts."""
+    approved = 0
+    batch_date = datetime.now(timezone.utc).date().isoformat()
+    for draft_id in body.draft_ids[:50]:  # cap to prevent abuse
+        doc = get_doc("drafts", draft_id, tenant_id=tenant.tenant_id)
+        if not doc or doc.get("status") == "scheduled":
+            continue
+        scheduled_for = _default_scheduled_for(
+            batch_date,
+            previous=coerce_datetime(doc.get("scheduled_for")),
+        )
+        updates: dict = {
+            "status": "scheduled",
+            "batch_date": batch_date,
+            "scheduled_for": scheduled_for,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        update_doc("drafts", draft_id, updates, tenant_id=tenant.tenant_id)
+        updated_doc = {**doc, **updates, "id": draft_id}
+        _sync_scheduled_records(
+            tenant_id=tenant.tenant_id,
+            draft_id=draft_id,
+            draft_doc=updated_doc,
+            batch_date=batch_date,
+            scheduled_for=scheduled_for,
+        )
+        approved += 1
+    logger.info("drafts.bulk_approved", extra={"tenant_id": tenant.tenant_id, "count": approved})
+    return {"approved": approved}
 
 
 @router.delete("/{draft_id}")
@@ -395,9 +468,50 @@ async def update_draft_content(
         updates["why_it_matters"] = (body.why_it_matters or "").strip()
     if len(updates) <= 1:
         raise HTTPException(status_code=400, detail="No content fields to update")
+
+    # Save current state to draft_history before overwriting (max 3 versions).
+    now = datetime.now(timezone.utc)
+    try:
+        history_coll = f"drafts/{draft_id}/draft_history"
+        existing_history = query_docs(
+            history_coll, order_by="-saved_at", limit=10, tenant_id=tenant.tenant_id
+        )
+        if len(existing_history) >= 3:
+            oldest_id = existing_history[-1].get("id")
+            if oldest_id:
+                delete_doc(history_coll, oldest_id, tenant_id=tenant.tenant_id)
+        from datetime import timedelta
+        snapshot = {
+            "headline": existing_doc.get("headline", ""),
+            "content_by_platform": existing_doc.get("content_by_platform", {}),
+            "saved_at": now,
+            "expires_at": now + timedelta(days=30),
+        }
+        add_doc(history_coll, snapshot, tenant_id=tenant.tenant_id)
+    except Exception as exc:
+        logger.warning("drafts.history_write_failed", extra={"draft_id": draft_id, "error": str(exc)})
+
     update_doc("drafts", draft_id, updates, tenant_id=tenant.tenant_id)
     updated_doc = {**existing_doc, **updates, "id": draft_id}
     return {"ok": True, "draft": updated_doc}
+
+
+@router.get("/{draft_id}/history")
+async def get_draft_history(
+    draft_id: str,
+    tenant: TenantProfile = Depends(require_access("starter", "pro")),
+):
+    """Return up to 3 saved versions for a draft (most recent first)."""
+    doc = get_doc("drafts", draft_id, tenant_id=tenant.tenant_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    history = query_docs(
+        f"drafts/{draft_id}/draft_history",
+        order_by="-saved_at",
+        limit=3,
+        tenant_id=tenant.tenant_id,
+    )
+    return {"history": history}
 
 
 class QuickGenerateRequest(BaseModel):

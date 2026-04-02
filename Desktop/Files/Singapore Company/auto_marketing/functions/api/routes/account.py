@@ -81,6 +81,31 @@ async def export_account_data(
                     extra={"collection": coll, "error": str(exc)},
                 )
 
+        # Export lead_activities nested under each qualified_lead.
+        try:
+            leads = query_docs("qualified_leads", tenant_id=tenant_id, limit=10000)
+            all_activities = []
+            for lead in leads:
+                lead_id = lead.get("id")
+                if not lead_id:
+                    continue
+                acts = query_docs(
+                    f"qualified_leads/{lead_id}/lead_activities",
+                    tenant_id=tenant_id,
+                    limit=1000,
+                )
+                for act in acts:
+                    rec = {k: _serialize(v) for k, v in act.items()}
+                    rec["_lead_id"] = lead_id
+                    all_activities.append(rec)
+            if all_activities:
+                zf.writestr("lead_activities.json", json.dumps(all_activities, indent=2))
+        except Exception as exc:
+            logger.warning(
+                "account.export.collection_failed",
+                extra={"collection": "lead_activities", "error": str(exc)},
+            )
+
     buf.seek(0)
     filename = f"intomarketing-export-{tenant_id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}.zip"
     return StreamingResponse(
@@ -129,6 +154,21 @@ async def delete_account(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     deleted_counts = {}
+
+    # Delete lead_activities nested under each qualified_lead before deleting leads.
+    try:
+        db = get_db()
+        leads_path = f"tenants/{tenant_id}/qualified_leads"
+        for lead_snap in db.collection(leads_path).stream():
+            acts_path = f"{leads_path}/{lead_snap.id}/lead_activities"
+            for act_snap in db.collection(acts_path).stream():
+                act_snap.reference.delete()
+    except Exception as exc:
+        logger.warning(
+            "account.delete.lead_activities_failed",
+            extra={"tenant_id": tenant_id, "error": str(exc)},
+        )
+
     for coll in _SUBCOLLECTIONS:
         try:
             n = _delete_collection(tenant_id, coll)
@@ -142,6 +182,25 @@ async def delete_account(
             raise HTTPException(status_code=500, detail=f"Failed to delete {coll}")
 
     tenant_ref.delete()
+
+    # GDPR/PDPA: write to suppress_list so the email cannot be used to
+    # re-create a tenant and inadvertently restore data after an erasure request.
+    try:
+        owner_email = getattr(tenant, "owner_email", None)
+        if owner_email:
+            get_db().collection("suppress_list").add(
+                {
+                    "email": owner_email,
+                    "reason": "deletion_request",
+                    "added_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+    except Exception as exc:
+        logger.warning(
+            "account.suppress_list_failed",
+            extra={"tenant_id": tenant_id, "error": str(exc)},
+        )
+
     logger.info(
         "account.deleted", extra={"tenant_id": tenant_id, "deleted": deleted_counts}
     )

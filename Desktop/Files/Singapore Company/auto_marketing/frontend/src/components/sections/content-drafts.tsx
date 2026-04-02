@@ -19,6 +19,7 @@ import type { BillingSummary, DraftContent, PlatformId } from "@/types";
 interface ContentDraftsSectionProps {
   billing: BillingSummary | null;
   platforms: PlatformId[];
+  oauthStatus?: { linkedin: boolean; x_twitter: boolean } | null;
 }
 
 interface EditDraftFormProps {
@@ -160,6 +161,7 @@ function sortDrafts(items: DraftContent[]): DraftContent[] {
 export default function ContentDraftsSection({
   billing,
   platforms,
+  oauthStatus,
 }: ContentDraftsSectionProps) {
   const enabledPlatforms = normalizePlatforms(platforms);
   const [drafts, setDrafts] = useState<DraftContent[]>([]);
@@ -175,7 +177,17 @@ export default function ContentDraftsSection({
   const [loadingMore, setLoadingMore] = useState(false);
   const [editFormDirty, setEditFormDirty] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [previewingDraft, setPreviewingDraft] = useState<DraftContent | null>(null);
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [historyDraft, setHistoryDraft] = useState<DraftContent | null>(null);
+  const [historyItems, setHistoryItems] = useState<{ id?: string; headline: string; content_by_platform: Record<string, string>; saved_at: string }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [pendingDiscardAction, setPendingDiscardAction] = useState<(() => void) | null>(null);
+  const [showFirstPostCelebration, setShowFirstPostCelebration] = useState(false);
+  const [ideasOpen, setIdeasOpen] = useState(false);
+  const [ideas, setIdeas] = useState<{ id: string; text: string; added_at: string }[]>([]);
+  const [ideaText, setIdeaText] = useState("");
+  const [ideaAdding, setIdeaAdding] = useState(false);
   const { toast } = useToast();
 
   function requestDiscard(action: () => void) {
@@ -243,6 +255,9 @@ export default function ContentDraftsSection({
   useEffect(() => {
     if (billing && hasTierAccess(billing, "starter")) {
       fetchDrafts();
+      apiFetch<{ ideas: { id: string; text: string; added_at: string }[] }>("/api/content-ideas")
+        .then((d) => setIdeas(d.ideas || []))
+        .catch(() => {});
       return;
     }
     setDrafts([]);
@@ -272,7 +287,7 @@ export default function ContentDraftsSection({
     if (!draft.id) return;
     setError("");
     try {
-      await apiFetch(`/api/drafts/${draft.id}/status`, {
+      const result = await apiFetch<{ ok: boolean; first_post?: boolean; approval_streak?: number }>(`/api/drafts/${draft.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "scheduled",
@@ -281,6 +296,9 @@ export default function ContentDraftsSection({
       });
       setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
       window.dispatchEvent(new Event("drafts:changed"));
+      if (result.first_post) {
+        setShowFirstPostCelebration(true);
+      }
     } catch (e: any) {
       setError(e.message);
     }
@@ -371,6 +389,68 @@ export default function ContentDraftsSection({
     }
   }
 
+  async function handleOpenHistory(draft: DraftContent) {
+    setHistoryDraft(draft);
+    setHistoryItems([]);
+    setHistoryLoading(true);
+    try {
+      const data = await apiFetch<{ history?: typeof historyItems }>(`/api/drafts/${draft.id}/history`);
+      setHistoryItems(data.history || []);
+    } catch {
+      setHistoryItems([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function handleBulkApprove() {
+    const pending = visibleDrafts.filter((d) => d.status !== "scheduled").map((d) => d.id).filter(Boolean) as string[];
+    if (pending.length === 0) return;
+    if (!window.confirm(`Approve and schedule all ${pending.length} visible draft(s)?`)) return;
+    setBulkApproving(true);
+    try {
+      const result = await apiFetch<{ approved: number }>("/api/drafts/bulk-approve", {
+        method: "POST",
+        body: JSON.stringify({ draft_ids: pending }),
+      });
+      setDrafts((prev) =>
+        prev.map((d) => (pending.includes(d.id ?? "") ? { ...d, status: "scheduled" } : d))
+      );
+      toast(`${result.approved} draft(s) scheduled`, "success");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBulkApproving(false);
+    }
+  }
+
+  async function handleAddIdea() {
+    const text = ideaText.trim();
+    if (!text) return;
+    setIdeaAdding(true);
+    try {
+      const result = await apiFetch<{ ok: boolean; idea: { id: string; text: string; added_at: string } }>("/api/content-ideas", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      setIdeas((prev) => [...prev, result.idea]);
+      setIdeaText("");
+    } catch (e: any) {
+      toast(e.message || "Failed to add idea", "error");
+    } finally {
+      setIdeaAdding(false);
+    }
+  }
+
+  async function handleDeleteIdea(ideaId: string) {
+    try {
+      await apiFetch(`/api/content-ideas/${ideaId}`, { method: "DELETE" });
+      setIdeas((prev) => prev.filter((i) => i.id !== ideaId));
+    } catch (e: any) {
+      toast(e.message || "Failed to remove idea", "error");
+    }
+  }
+
   const visibleDrafts = drafts.filter((draft) => {
     const rawPlatforms =
       draft.platforms_generated && draft.platforms_generated.length > 0
@@ -394,13 +474,24 @@ export default function ContentDraftsSection({
           </p>
         </div>
         {billing && hasTierAccess(billing, "starter") && (
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="rounded-apple-sm bg-apple-blue px-4 py-2 text-sm font-medium text-white hover:bg-apple-blue-hover disabled:opacity-50"
-          >
-            {generating ? "Generating..." : "Write a post"}
-          </button>
+          <div className="flex items-center gap-2">
+            {visibleDrafts.filter((d) => d.status !== "scheduled").length > 1 && (
+              <button
+                onClick={() => void handleBulkApprove()}
+                disabled={bulkApproving}
+                className="rounded-apple-sm border border-apple-border px-4 py-2 text-sm font-medium text-apple-text hover:bg-apple-bg disabled:opacity-50"
+              >
+                {bulkApproving ? "Scheduling…" : "Approve all"}
+              </button>
+            )}
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="rounded-apple-sm bg-apple-blue px-4 py-2 text-sm font-medium text-white hover:bg-apple-blue-hover disabled:opacity-50"
+            >
+              {generating ? "Generating..." : "Write a post"}
+            </button>
+          </div>
         )}
       </div>
 
@@ -413,12 +504,75 @@ export default function ContentDraftsSection({
 
       {billing && !hasTierAccess(billing, "starter") ? null : (
         <>
-          <div className="mb-4">
+          <div className="mb-4 space-y-2">
             <Notice tone="neutral">
               Drafts are production-ready text and assets. Auto-publish to all six channels is not guaranteed yet—copy
               to your tools or use linked accounts where available.
             </Notice>
+            {oauthStatus && !oauthStatus.linkedin && !oauthStatus.x_twitter && (
+              <Notice tone="neutral">
+                Connect LinkedIn or X in{" "}
+                <a href="/settings#platforms" className="font-medium underline">
+                  Settings → Platforms
+                </a>{" "}
+                to enable auto-publishing.
+              </Notice>
+            )}
           </div>
+          {/* Ideas queue */}
+          <div className="mb-4 rounded-apple border border-apple-border bg-apple-card shadow-apple overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIdeasOpen((v) => !v)}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-apple-bg"
+            >
+              <span>💡 Ideas queue {ideas.length > 0 ? `(${ideas.length})` : ""}</span>
+              <span className="text-apple-secondary text-xs">{ideasOpen ? "▲" : "▼"}</span>
+            </button>
+            {ideasOpen && (
+              <div className="border-t border-apple-border px-4 pb-4 pt-3 space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={ideaText}
+                    onChange={(e) => setIdeaText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAddIdea(); } }}
+                    placeholder="e.g. Post about our new pricing update"
+                    maxLength={500}
+                    className="flex-1 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleAddIdea()}
+                    disabled={ideaAdding || !ideaText.trim()}
+                    className="rounded-apple-sm bg-apple-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-apple-blue-hover disabled:opacity-50"
+                  >
+                    {ideaAdding ? "Adding…" : "Add"}
+                  </button>
+                </div>
+                {ideas.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {ideas.map((idea) => (
+                      <li key={idea.id} className="flex items-start justify-between gap-2 rounded-md bg-apple-bg px-3 py-2 text-sm">
+                        <span className="min-w-0 flex-1 break-words">{idea.text}</span>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteIdea(idea.id)}
+                          className="shrink-0 text-xs text-apple-secondary hover:text-red-500"
+                          aria-label="Remove idea"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-apple-secondary">No ideas queued yet. Ideas feed into the AI when generating content.</p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="mb-4 flex gap-1 overflow-x-auto rounded-apple-sm bg-apple-card p-1 shadow-apple [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {ALL_PLATFORMS.filter((item) => enabledPlatforms.includes(item.id)).map((item) => (
               <button
@@ -445,8 +599,15 @@ export default function ContentDraftsSection({
                 No {PLATFORM_BY_ID[platform].label} drafts yet
               </p>
               <p className="mt-1 text-sm text-apple-secondary">
-                Click &quot;Write a post&quot; to generate a reusable draft pack for your enabled
-                channels.
+                Your AI pipeline runs at 07:00 SGT.{" "}
+                <button
+                  type="button"
+                  className="text-apple-blue hover:underline"
+                  onClick={() => void handleGenerate()}
+                >
+                  Run now
+                </button>{" "}
+                or check back later.
               </p>
             </div>
           ) : (
@@ -488,15 +649,28 @@ export default function ContentDraftsSection({
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => handleSchedule(draft)}
-                        className="rounded-apple-sm bg-apple-blue px-4 py-1.5 text-xs font-medium text-white hover:bg-apple-blue-hover"
+                        className="inline-flex items-center gap-1.5 rounded-apple-sm bg-apple-blue px-4 py-1.5 text-xs font-medium text-white hover:bg-apple-blue-hover"
                       >
                         Approve & Schedule
+                        <kbd className="font-mono text-[10px] border border-white/30 rounded px-1 py-0.5 opacity-70">⌘↵</kbd>
+                      </button>
+                      <button
+                        onClick={() => setPreviewingDraft(draft)}
+                        className="rounded-apple-sm border border-apple-border px-4 py-1.5 text-xs font-medium text-apple-text hover:bg-apple-bg"
+                      >
+                        Preview
                       </button>
                       <button
                         onClick={() => setEditingDraft(draft)}
                         className="rounded-apple-sm border border-apple-border px-4 py-1.5 text-xs font-medium text-apple-text hover:bg-apple-bg"
                       >
                         Edit
+                      </button>
+                      <button
+                        onClick={() => void handleOpenHistory(draft)}
+                        className="rounded-apple-sm border border-apple-border px-4 py-1.5 text-xs font-medium text-apple-secondary hover:bg-apple-bg"
+                      >
+                        History
                       </button>
                       <button
                         onClick={() => handleRegenerate(draft)}
@@ -586,7 +760,7 @@ export default function ContentDraftsSection({
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
           <Dialog.Content
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-apple bg-white p-6 shadow-apple"
+            className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-apple bg-apple-card p-6 shadow-apple"
             onPointerDownOutside={(e) => {
               if (editFormDirty) {
                 e.preventDefault();
@@ -622,7 +796,7 @@ export default function ContentDraftsSection({
       <Dialog.Root open={discardConfirmOpen} onOpenChange={setDiscardConfirmOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[70] bg-black/50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-[71] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-apple bg-white p-6 shadow-apple">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[71] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-apple bg-apple-card p-6 shadow-apple">
             <Dialog.Title className="text-lg font-semibold">Discard unsaved changes?</Dialog.Title>
             <p className="mt-2 text-sm text-apple-secondary">Your edits will not be saved.</p>
             <div className="mt-6 flex justify-end gap-2">
@@ -641,6 +815,165 @@ export default function ContentDraftsSection({
                 Discard
               </button>
             </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Post Preview Modal */}
+      <Dialog.Root open={!!previewingDraft} onOpenChange={(o) => { if (!o) setPreviewingDraft(null); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-apple bg-apple-card p-6 shadow-apple focus:outline-none"
+            aria-modal
+            aria-labelledby="preview-modal-title"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 id="preview-modal-title" className="text-sm font-semibold text-apple-secondary uppercase tracking-wide">
+                Post Preview — {platform.replace("_", " ")}
+              </h3>
+              <Dialog.Close className="rounded p-1 text-apple-secondary hover:text-apple-text">✕</Dialog.Close>
+            </div>
+
+            {previewingDraft && platform === "linkedin" && (
+              <div className="rounded-xl border border-[#e0e0e0] bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm select-none">
+                    {previewingDraft.headline?.charAt(0) ?? "A"}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1d]">Your Company</p>
+                    <p className="text-xs text-[#666]">Just now · 🌐</p>
+                  </div>
+                </div>
+                <p className="whitespace-pre-wrap text-sm text-[#1d1d1d] leading-relaxed">
+                  {(previewingDraft.content_by_platform?.linkedin || previewingDraft.headline || "").slice(0, 600)}
+                </p>
+                <div className="mt-4 flex gap-4 border-t border-[#e0e0e0] pt-3 text-xs text-[#666]">
+                  <span>👍 Like</span>
+                  <span>💬 Comment</span>
+                  <span>🔁 Repost</span>
+                  <span>✉️ Send</span>
+                </div>
+              </div>
+            )}
+
+            {previewingDraft && platform === "x_twitter" && (
+              <div className="rounded-xl border border-[#e1e8ed] bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-neutral-800 flex items-center justify-center text-white font-bold text-sm select-none">
+                    {previewingDraft.headline?.charAt(0) ?? "A"}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[#1d1d1d]">Your Company</p>
+                    <p className="text-xs text-[#666]">@yourcompany</p>
+                  </div>
+                </div>
+                <p className="whitespace-pre-wrap text-sm text-[#1d1d1d] leading-relaxed">
+                  {(previewingDraft.content_by_platform?.x_twitter || previewingDraft.headline || "").slice(0, 280)}
+                </p>
+                <div className="mt-4 flex gap-5 text-xs text-[#657786]">
+                  <span>💬 Reply</span>
+                  <span>🔁 Repost</span>
+                  <span>❤️ Like</span>
+                  <span>📊 Views</span>
+                </div>
+              </div>
+            )}
+
+            {previewingDraft && !["linkedin", "x_twitter"].includes(platform) && (
+              <div className="rounded-xl border border-apple-border bg-apple-bg p-4">
+                <p className="text-sm font-semibold mb-2">{previewingDraft.headline}</p>
+                <p className="whitespace-pre-wrap text-sm text-apple-secondary leading-relaxed">
+                  {(previewingDraft.content_by_platform?.[platform] || previewingDraft.headline || "").slice(0, 500)}
+                </p>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Draft History Modal */}
+      <Dialog.Root open={!!historyDraft} onOpenChange={(o) => { if (!o) { setHistoryDraft(null); setHistoryItems([]); } }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-60 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-apple bg-apple-card p-6 shadow-apple focus:outline-none"
+            aria-modal
+            aria-labelledby="history-modal-title"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 id="history-modal-title" className="text-sm font-semibold">Edit History</h3>
+              <Dialog.Close className="rounded p-1 text-apple-secondary hover:text-apple-text">✕</Dialog.Close>
+            </div>
+            {historyLoading ? (
+              <p className="text-sm text-apple-secondary">Loading…</p>
+            ) : historyItems.length === 0 ? (
+              <p className="text-sm text-apple-secondary">No saved versions yet. Edit and save a draft to create history.</p>
+            ) : (
+              <div className="space-y-3">
+                {historyItems.map((item, i) => (
+                  <div key={item.id ?? i} className="rounded-apple-sm border border-apple-border p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-medium text-apple-secondary">
+                        {new Date(item.saved_at).toLocaleString()}
+                      </p>
+                      <button
+                        type="button"
+                        className="text-xs text-apple-blue hover:underline"
+                        onClick={() => {
+                          if (historyDraft) {
+                            setEditingDraft({ ...historyDraft, headline: item.headline, content_by_platform: item.content_by_platform });
+                            setHistoryDraft(null);
+                            setHistoryItems([]);
+                          }
+                        }}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                    <p className="text-xs text-apple-text truncate">{item.headline}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* First-post celebration modal */}
+      <Dialog.Root open={showFirstPostCelebration} onOpenChange={setShowFirstPostCelebration}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-50 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-apple bg-apple-card p-8 shadow-apple-lg text-center"
+            aria-modal="true"
+            aria-labelledby="first-post-title"
+          >
+            <div className="mb-4 text-5xl" aria-hidden="true">🎉</div>
+            <Dialog.Title id="first-post-title" className="text-lg font-semibold">
+              Your first post is scheduled!
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-apple-secondary">
+              Check back after 07:00 SGT to see it live on your connected platform.
+            </Dialog.Description>
+            <style>{`
+              @keyframes confetti-pop {
+                0% { opacity: 0; transform: scale(0.6) translateY(10px); }
+                60% { opacity: 1; transform: scale(1.08) translateY(-4px); }
+                100% { opacity: 1; transform: scale(1) translateY(0); }
+              }
+              [data-radix-dialog-content]:has(#first-post-title) {
+                animation: confetti-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+              }
+            `}</style>
+            <button
+              type="button"
+              onClick={() => setShowFirstPostCelebration(false)}
+              className="mt-6 w-full rounded-apple-sm bg-apple-blue px-4 py-2.5 text-sm font-medium text-white hover:bg-apple-blue-hover"
+            >
+              Got it
+            </button>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

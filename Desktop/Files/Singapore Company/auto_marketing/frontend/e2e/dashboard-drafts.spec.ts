@@ -44,4 +44,28 @@ test.describe("Dashboard – Content Drafts", () => {
     );
     expect(res.status()).toBe(401);
   });
+
+  test("bulk approve requires auth", async ({ request }) => {
+    const res = await request.post(
+      "http://localhost:8080/api/drafts/bulk-approve",
+      { data: { draft_ids: ["draft-1", "draft-2"] } }
+    );
+    expect(res.status()).toBe(401);
+  });
+
+  test("draft history requires auth", async ({ request }) => {
+    const res = await request.get(
+      "http://localhost:8080/api/drafts/fake-id/history"
+    );
+    expect(res.status()).toBe(401);
+  });
+
+  test("bulk approve rejects empty list without auth", async ({ request }) => {
+    const res = await request.post(
+      "http://localhost:8080/api/drafts/bulk-approve",
+      { data: { draft_ids: [] } }
+    );
+    // Without auth should get 401, not 422
+    expect(res.status()).toBe(401);
+  });
 });
