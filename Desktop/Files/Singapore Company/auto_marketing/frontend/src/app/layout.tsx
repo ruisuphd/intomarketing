@@ -1,12 +1,20 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
 import CookieConsentBanner from "@/components/cookie-consent";
 import { getSiteUrl } from "@/lib/site-url";
+import { APP_NAME, APP_FULL_NAME } from "@/lib/brand";
 import "./globals.css";
 
-const APP_NAME = "IntoMarketing";
-const APP_TITLE = "IntoMarketing — AI Marketing Automation";
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const APP_TITLE = `${APP_NAME} — AI Marketing Automation`;
 const APP_DESCRIPTION =
   "AI-generated social drafts, market intelligence, and lead hints for B2B teams. Starter includes several scheduled generations per week; Pro adds a daily cadence and higher limits.";
 
@@ -31,10 +39,12 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
+      { url: "/favicon.png", type: "image/png" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: "/icon-192.png",
+    shortcut: "/favicon.png",
   },
   openGraph: {
     title: APP_TITLE,
@@ -95,7 +105,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body className="font-sans">
         <JsonLd />
         <AuthProvider>

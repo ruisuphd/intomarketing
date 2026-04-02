@@ -66,9 +66,15 @@ export default function Nav({
         <div className="flex min-w-0 items-center gap-2">
           <Link
             href="/dashboard"
-            className="max-w-[11rem] truncate text-[15px] font-semibold tracking-tight sm:max-w-none"
+            className="flex flex-col"
+            aria-label="IntoMarketing by Intonation Labs"
           >
-            {companyName || "IntoMarketing"}
+            <span className="max-w-[11rem] truncate text-[15px] font-semibold tracking-tight sm:max-w-none">
+              {companyName || "IntoMarketing"}
+            </span>
+            <span className="hidden text-[10px] font-medium tracking-tight text-apple-secondary sm:block">
+              by Intonation Labs
+            </span>
           </Link>
           {billing && (
             <span className="hidden rounded-full bg-apple-bg px-2 py-0.5 text-[11px] font-medium text-apple-secondary sm:inline-flex">

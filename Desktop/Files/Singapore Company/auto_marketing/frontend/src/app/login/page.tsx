@@ -129,15 +129,18 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-apple-bg lg:flex-row">
-      <div className="flex flex-col justify-center border-b border-apple-border px-6 pb-8 pt-10 lg:flex-1 lg:max-w-[50%] lg:border-b-0 lg:border-r lg:px-12 lg:py-12 lg:pt-16">
+      <div className="flex flex-col justify-center bg-[var(--color-surface)] border-b border-[var(--color-border-light)] px-6 pb-8 pt-10 lg:flex-1 lg:max-w-[50%] lg:border-b-0 lg:border-r lg:px-12 lg:py-12 lg:pt-16">
         <div className="mx-auto w-full max-w-md">
-          <Link href="/" className="inline-flex items-center gap-2">
+          <Link href="/" className="inline-flex items-center gap-2.5" aria-label="IntoMarketing by Intonation Labs">
             <img
               src="/logo.png"
-              alt="IntoMarketing"
-              className="h-8 w-8 rounded-lg border border-apple-border bg-white object-contain"
+              alt=""
+              className="h-8 w-8 rounded-lg object-contain"
             />
-            <span className="text-lg font-semibold text-apple-text">IntoMarketing</span>
+            <div className="flex flex-col">
+              <span className="block text-[15px] font-semibold tracking-tight text-apple-text">IntoMarketing</span>
+              <span className="mt-0.5 block text-[10px] font-medium tracking-tight text-apple-secondary sm:text-[11px]">by Intonation Labs</span>
+            </div>
           </Link>
           <h1 className="mt-6 text-3xl font-bold leading-tight tracking-tight text-apple-text sm:text-4xl">
             Your AI marketing team, working while you sleep.
@@ -162,8 +165,8 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="flex flex-1 items-start justify-center px-4 py-8 lg:items-center lg:px-12 lg:py-12">
-        <div className="w-full max-w-md rounded-2xl border border-apple-border bg-apple-card p-8 shadow-apple-lg">
+      <div className="flex flex-1 items-start justify-center bg-[var(--color-surface-alt)] px-4 py-8 lg:items-center lg:px-12 lg:py-12">
+        <div className="w-full max-w-md rounded-2xl bg-[var(--color-surface-elevated)] p-8 shadow-sm dark:bg-[var(--color-surface-alt)]">
           <h2 className="text-xl font-semibold text-apple-text">
             {mode === "signin" ? "Welcome back" : "Create your account"}
           </h2>

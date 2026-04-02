@@ -57,7 +57,7 @@ const _apiOrigin = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
 const _cspDirectives = [
   "default-src 'self'",
   // 'unsafe-inline' required by Next.js hydration scripts and Sentry loader
-  "script-src 'self' 'unsafe-inline' https://js.stripe.com",
+  "script-src 'self' 'unsafe-inline' https://js.stripe.com https://apis.google.com https://www.gstatic.com",
   "style-src 'self' 'unsafe-inline'",
   [
     "connect-src 'self'",
@@ -70,11 +70,11 @@ const _cspDirectives = [
     .join(" "),
   "img-src 'self' data: blob: https:",
   "font-src 'self'",
-  "frame-src https://js.stripe.com https://hooks.stripe.com https://accounts.google.com",
+  "frame-src https://js.stripe.com https://hooks.stripe.com https://accounts.google.com https://*.firebaseapp.com",
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
-  "report-uri /api/consent/csp-report",
+  `report-uri ${_apiOrigin || ""}/api/consent/csp-report`,
 ];
 securityHeaders.push({
   key: "Content-Security-Policy-Report-Only",

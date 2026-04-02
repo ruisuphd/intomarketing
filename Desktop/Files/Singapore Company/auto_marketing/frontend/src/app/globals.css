@@ -3,20 +3,51 @@
 @tailwind utilities;
 
 :root {
+  /* ── IntoMeeting-aligned design tokens ── */
+  --color-primary: #0071e3;
+  --color-primary-hover: #0077ed;
+  --color-surface: #ffffff;
+  --color-surface-alt: #fbfbfd;
+  --color-surface-elevated: #ffffff;
+  --color-text: #1d1d1f;
+  --color-text-secondary: #6e6e73;
+  --color-text-muted: #86868b;
+  --color-border: #d2d2d7;
+  --color-border-light: #e8e8ed;
+  --color-success: #30d158;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff3b30;
+
+  /* ── Legacy RGB triplets (Tailwind apple-* colors) ── */
   --apple-text: 29 29 31;         /* #1d1d1f */
-  --apple-secondary: 134 134 139; /* #86868b */
-  --apple-bg: 245 245 247;        /* #f5f5f7 */
+  --apple-secondary: 110 110 115; /* #6e6e73 — matched to IntoMeeting */
+  --apple-bg: 251 251 253;        /* #fbfbfd — matched to IntoMeeting surface-alt */
   --apple-card: 255 255 255;      /* #ffffff */
   --apple-border: 210 210 215;    /* #d2d2d7 */
 }
 
+.dark,
 @media (prefers-color-scheme: dark) {
   :root {
-    --apple-text: 242 242 247;    /* near-white */
-    --apple-secondary: 152 152 157;
-    --apple-bg: 28 28 30;         /* iOS dark bg */
-    --apple-card: 44 44 46;       /* iOS dark card */
-    --apple-border: 58 58 60;
+    --color-primary: #2997ff;
+    --color-primary-hover: #47a8ff;
+    --color-surface: #000000;
+    --color-surface-alt: #1d1d1f;
+    --color-surface-elevated: #2d2d2d;
+    --color-text: #f5f5f7;
+    --color-text-secondary: #a1a1a6;
+    --color-text-muted: #86868b;
+    --color-border: #424245;
+    --color-border-light: #38383a;
+    --color-success: #30d158;
+    --color-warning: #ff9f0a;
+    --color-danger: #ff3b30;
+
+    --apple-text: 245 245 247;    /* #f5f5f7 */
+    --apple-secondary: 161 161 166; /* #a1a1a6 — matched to IntoMeeting */
+    --apple-bg: 0 0 0;            /* #000000 — true black like IntoMeeting */
+    --apple-card: 45 45 45;       /* #2d2d2d — elevated surface */
+    --apple-border: 66 66 69;     /* #424245 */
   }
 }
 
@@ -32,7 +63,7 @@ body {
 }
 
 ::selection {
-  background: #0071e3;
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -40,7 +71,7 @@ body {
   input,
   textarea,
   select {
-    @apply rounded-apple-sm border border-apple-border bg-apple-card px-3.5 py-2.5 text-[15px] outline-none transition-shadow duration-200 focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue;
+    @apply rounded-xl border border-apple-border bg-apple-card px-3.5 py-2.5 text-[15px] outline-none transition-all duration-200 focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue;
   }
   button {
     @apply transition-all duration-200;

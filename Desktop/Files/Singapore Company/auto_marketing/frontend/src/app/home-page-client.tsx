@@ -60,13 +60,16 @@ export default function HomePageClient() {
     <div className="min-h-screen bg-apple-bg text-apple-text">
       <header className="sticky top-0 z-50 border-b border-apple-border bg-apple-card/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2.5" aria-label="IntoMarketing by Intonation Labs">
             <img
               src="/logo.png"
-              alt="IntoMarketing"
-              className="h-8 w-8 rounded-lg border border-apple-border bg-white object-contain"
+              alt=""
+              className="h-8 w-8 rounded-lg object-contain"
             />
-            <span className="text-[15px] font-semibold tracking-tight">IntoMarketing</span>
+            <div className="flex flex-col">
+              <span className="block text-[15px] font-semibold tracking-tight text-apple-text">IntoMarketing</span>
+              <span className="mt-0.5 block text-[10px] font-medium tracking-tight text-apple-secondary sm:text-[11px]">by Intonation Labs</span>
+            </div>
           </Link>
           <div className="flex items-center gap-3">
             <Link
