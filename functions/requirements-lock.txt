@@ -6,7 +6,7 @@ uvicorn[standard]==0.34.0
 httpx==0.28.1
 firebase-admin==6.9.0
 google-cloud-firestore==2.23.0
-google-cloud-storage==2.19.0
+google-cloud-storage==3.10.1
 google-cloud-pubsub==2.35.0
 google-cloud-secret-manager==2.26.0
 google-cloud-aiplatform==1.140.0
