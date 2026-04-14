@@ -7,13 +7,13 @@ on:
       - "frontend/**"
       - "firebase.json"
       - ".firebaserc"
+      - ".github/workflows/deploy-frontend.yml"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
@@ -47,10 +47,10 @@ jobs:
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
           NEXT_PUBLIC_STRIPE_PRICING_TABLE_ID: ${{ secrets.NEXT_PUBLIC_STRIPE_PRICING_TABLE_ID }}
 
-      - name: Deploy to Firebase App Hosting
-        uses: firebase/firebase-github-actions/deploy-app-hosting@v0
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: intonation-labs-marketing
-          target: automark-web
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Firebase App Hosting
+        run: npx --yes firebase-tools@14 deploy --only apphosting:automark-web --project intonation-labs-marketing --non-interactive
