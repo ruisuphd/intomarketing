@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-from typing import Any
 
 from shared.firestore_client import query_docs
 from shared.logger import get_logger

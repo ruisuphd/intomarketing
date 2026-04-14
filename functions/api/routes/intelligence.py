@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from api.middleware.auth import require_access
-from shared.firestore_client import query_docs_paginated
+from shared.firestore_client import count_docs, query_docs_paginated
 from shared.models import TenantProfile
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
@@ -34,3 +34,20 @@ async def list_intelligence(
     if next_cursor:
         out["next_cursor"] = next_cursor
     return out
+
+
+@router.get("/count")
+async def count_intelligence(
+    date: str | None = None,
+    tenant: TenantProfile = Depends(require_access("starter", "pro")),
+):
+    filters: list[tuple] = []
+    if date:
+        filters.append(("batch_date", "==", date))
+    return {
+        "count": count_docs(
+            "intelligence_items",
+            filters or None,
+            tenant_id=tenant.tenant_id,
+        )
+    }

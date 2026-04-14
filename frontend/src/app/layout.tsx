@@ -1,18 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
 import CookieConsentBanner from "@/components/cookie-consent";
 import { getSiteUrl } from "@/lib/site-url";
-import { APP_NAME, APP_FULL_NAME } from "@/lib/brand";
+import { APP_NAME } from "@/lib/brand";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-inter",
-  display: "swap",
-});
 
 const APP_TITLE = `${APP_NAME} — AI Marketing Automation`;
 const APP_DESCRIPTION =
@@ -105,7 +97,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
+    <html lang="en" suppressHydrationWarning>
       <body className="font-sans">
         <JsonLd />
         <AuthProvider>

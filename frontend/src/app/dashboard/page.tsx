@@ -55,6 +55,7 @@ function DashboardMainSkeleton() {
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const userId = user?.uid ?? null;
   const [companyName, setCompanyName] = useState("");
   const [settings, setSettings] = useState<Partial<TenantProfile> | null>(null);
   const [activeSection, setActiveSection] = useState("overview");
@@ -63,7 +64,16 @@ export default function DashboardPage() {
   const [pageError, setPageError] = useState("");
   const [dismissedVerification, setDismissedVerification] = useState(false);
   const [overviewPrefetch, setOverviewPrefetch] = useState<
-    Pick<DashboardBootstrapResponse, "usage" | "pipeline_status" | "oauth_status" | "competitor_signal"> | null
+    Pick<
+      DashboardBootstrapResponse,
+      | "usage"
+      | "pipeline_status"
+      | "oauth_status"
+      | "competitor_signal"
+      | "overview_counts"
+      | "health_score"
+      | "goals"
+    > | null
   >(null);
   const [streakCount, setStreakCount] = useState<number>(0);
 
@@ -72,7 +82,7 @@ export default function DashboardPage() {
   }, [user, authLoading, router]);
 
   const loadDashboard = useCallback(async () => {
-    if (!user) return;
+    if (!userId) return;
     setDataLoading(true);
     setPageError("");
     try {
@@ -101,6 +111,9 @@ export default function DashboardPage() {
         pipeline_status: boot.pipeline_status,
         oauth_status: boot.oauth_status,
         competitor_signal: boot.competitor_signal,
+        overview_counts: boot.overview_counts,
+        health_score: boot.health_score,
+        goals: boot.goals,
       });
     } catch (err: unknown) {
       setOverviewPrefetch(null);
@@ -117,13 +130,13 @@ export default function DashboardPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [router, user?.uid]);
+  }, [router, userId]);
 
   useEffect(() => {
-    if (!authLoading && user) {
+    if (!authLoading && userId) {
       loadDashboard();
     }
-  }, [authLoading, user?.uid, loadDashboard]);
+  }, [authLoading, userId, loadDashboard]);
 
   useEffect(() => {
     if (!billing || pageError) return;

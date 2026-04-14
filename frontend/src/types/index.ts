@@ -74,6 +74,26 @@ export interface DashboardBootstrapResponse {
     source_name: string;
     postability_score: number;
   } | null;
+  overview_counts: OverviewCounts;
+  health_score: HealthScore;
+  goals: GoalsSummary;
+}
+
+export interface OverviewCounts {
+  drafts_ready: number;
+  market_signals: number;
+  warm_leads: number;
+}
+
+export interface HealthScore {
+  score: number;
+  label: string;
+  breakdown: Record<string, number>;
+}
+
+export interface GoalsSummary {
+  goals: Record<string, number>;
+  actuals: Record<string, number>;
 }
 
 export interface BillingSummary {
@@ -179,4 +199,6 @@ export interface AnalyticsResponse {
   summary: AnalyticsSummary;
   series: AnalyticsSeriesPoint[];
   live_metrics_available: boolean;
+  latest_snapshot_at?: string | null;
+  metrics_sources?: string[];
 }

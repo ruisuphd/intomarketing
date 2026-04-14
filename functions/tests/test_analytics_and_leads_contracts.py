@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from api.routes import analytics as analytics_routes
 from api.routes import drafts, leads
+from api.routes import intelligence as intelligence_routes
 from engines import analytics_gatherer, linkedin_enrichment
 from shared.models import TenantProfile
 
@@ -130,6 +131,34 @@ def test_list_leads_merges_latest_outreach_copy(monkeypatch):
     assert response["leads"][0]["outreach_status"] == "approved"
 
 
+def test_count_leads_returns_true_collection_count(monkeypatch):
+    monkeypatch.setattr(
+        leads,
+        "count_docs",
+        lambda collection, *args, **kwargs: 14 if collection == "qualified_leads" else 0,
+    )
+
+    response = asyncio.run(leads.count_leads(tenant=_tenant()))
+
+    assert response == {"count": 14}
+
+
+def test_count_intelligence_supports_filtered_totals(monkeypatch):
+    def fake_count_docs(collection, filters=None, tenant_id=None):
+        assert collection == "intelligence_items"
+        assert filters == [("batch_date", "==", "2026-03-14")]
+        assert tenant_id == "tenant-1"
+        return 6
+
+    monkeypatch.setattr(intelligence_routes, "count_docs", fake_count_docs)
+
+    response = asyncio.run(
+        intelligence_routes.count_intelligence(date="2026-03-14", tenant=_tenant(subscription_tier="starter"))
+    )
+
+    assert response == {"count": 6}
+
+
 def test_get_analytics_aggregates_snapshots_and_funnel(monkeypatch):
     def fake_query_docs(collection, **kwargs):
         if collection == "analytics_snapshots":
@@ -185,6 +214,8 @@ def test_get_analytics_aggregates_snapshots_and_funnel(monkeypatch):
     assert response["summary"]["reply_received"] == 1
     assert len(response["series"]) == 2
     assert response["live_metrics_available"] is True
+    assert response["latest_snapshot_at"] == "2026-03-14T00:00:00+00:00"
+    assert response["metrics_sources"] == ["linkedin_api", "x_api"]
 
 
 def test_get_analytics_live_metrics_false_without_platform_source(monkeypatch):
@@ -213,6 +244,7 @@ def test_get_analytics_live_metrics_false_without_platform_source(monkeypatch):
         )
     )
     assert response["live_metrics_available"] is False
+    assert response["metrics_sources"] == ["placeholder_until_platform_apis"]
 
 
 def test_gather_daily_analytics_writes_snapshot_to_tenant_collection(monkeypatch):

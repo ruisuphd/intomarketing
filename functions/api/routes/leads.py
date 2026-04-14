@@ -13,6 +13,7 @@ from api.middleware.legal import require_subscription_with_legal
 from engines.linkedin_enrichment import enrich_lead
 from shared.firestore_client import (
     add_doc,
+    count_docs,
     delete_doc,
     get_doc,
     query_docs,
@@ -117,6 +118,13 @@ async def list_leads(
     if next_cursor:
         out["next_cursor"] = next_cursor
     return out
+
+
+@router.get("/count")
+async def count_leads(
+    tenant: TenantProfile = Depends(require_subscription("pro")),
+):
+    return {"count": count_docs("qualified_leads", tenant_id=tenant.tenant_id)}
 
 
 @router.get("/{lead_id}")
