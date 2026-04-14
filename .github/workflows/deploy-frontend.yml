@@ -50,7 +50,7 @@ jobs:
           NEXT_PUBLIC_STRIPE_PRICING_TABLE_ID: prctbl_1TDy46E6eNlRVcoB9E4pa94S
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
