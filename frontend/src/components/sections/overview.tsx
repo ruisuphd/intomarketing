@@ -6,7 +6,14 @@ import Notice from "@/components/ui/notice";
 import { ApiError, apiFetch } from "@/lib/api";
 import { hasTierAccess } from "@/lib/billing";
 import { PLATFORM_BY_ID } from "@/lib/platforms";
-import type { BillingSummary, DashboardBootstrapResponse, PlatformId } from "@/types";
+import type {
+  BillingSummary,
+  DashboardBootstrapResponse,
+  GoalsSummary,
+  HealthScore,
+  OverviewCounts,
+  PlatformId,
+} from "@/types";
 
 interface OverviewSectionProps {
   billing: BillingSummary | null;
@@ -16,7 +23,13 @@ interface OverviewSectionProps {
   /** From GET /api/dashboard/bootstrap — avoids duplicate usage/pipeline/oauth fetches on first paint */
   overviewPrefetch?: Pick<
     DashboardBootstrapResponse,
-    "usage" | "pipeline_status" | "oauth_status" | "competitor_signal"
+    | "usage"
+    | "pipeline_status"
+    | "oauth_status"
+    | "competitor_signal"
+    | "overview_counts"
+    | "health_score"
+    | "goals"
   >;
 }
 
@@ -61,10 +74,10 @@ export default function OverviewSection({
   const [pipelineTriggering, setPipelineTriggering] = useState(false);
   const [pipelineTriggerMessage, setPipelineTriggerMessage] = useState("");
   const [pipelineTriggerError, setPipelineTriggerError] = useState("");
-  const [healthScore, setHealthScore] = useState<{ score: number; label: string; breakdown: Record<string, number> } | null>(null);
+  const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [competitorSignal, setCompetitorSignal] = useState<{ title: string; source_name: string; postability_score: number } | null>(null);
   const [signalDismissed, setSignalDismissed] = useState(false);
-  const [goalsData, setGoalsData] = useState<{ goals: Record<string, number>; actuals: Record<string, number> } | null>(null);
+  const [goalsData, setGoalsData] = useState<GoalsSummary | null>(null);
   const consumedPrefetch = useRef(false);
 
   useEffect(() => {
@@ -101,9 +114,9 @@ export default function OverviewSection({
 
     async function loadIntelCount() {
       try {
-        const data = await apiFetch<{ items?: unknown[] }>("/api/intelligence?limit=5");
+        const data = await apiFetch<{ count: number }>("/api/intelligence/count");
         if (!cancelled) {
-          setIntel(data.items?.length || 0);
+          setIntel(data.count ?? 0);
         }
       } catch {
         if (!cancelled) {
@@ -115,9 +128,9 @@ export default function OverviewSection({
 
     async function loadLeadCount() {
       try {
-        const data = await apiFetch<{ leads?: unknown[] }>("/api/leads?limit=1");
+        const data = await apiFetch<{ count: number }>("/api/leads/count");
         if (!cancelled) {
-          setLeads(data.leads?.length || 0);
+          setLeads(data.count ?? 0);
         }
       } catch {
         if (!cancelled) {
@@ -127,27 +140,58 @@ export default function OverviewSection({
       }
     }
 
+    async function loadHealthScore() {
+      try {
+        const data = await apiFetch<HealthScore>("/api/dashboard/health-score");
+        if (!cancelled) {
+          setHealthScore(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setHealthScore(null);
+        }
+      }
+    }
+
+    async function loadGoals() {
+      try {
+        const data = await apiFetch<GoalsSummary>("/api/settings/goals");
+        if (!cancelled) {
+          setGoalsData(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setGoalsData(null);
+        }
+      }
+    }
+
     if (!canUseStarter) {
       setDrafts(0);
       setIntel(0);
+      setHealthScore(null);
+      setGoalsData(null);
     } else {
-      void loadDraftCount();
-      void loadIntelCount();
+      const prefetchedCounts = overviewPrefetch?.overview_counts;
+      if (prefetchedCounts && !consumedPrefetch.current) {
+        setDrafts(prefetchedCounts.drafts_ready ?? 0);
+        setIntel(prefetchedCounts.market_signals ?? 0);
+      } else {
+        void loadDraftCount();
+        void loadIntelCount();
+      }
     }
 
     if (!canUsePro) {
       setLeads(0);
     } else {
-      void loadLeadCount();
+      const prefetchedCounts = overviewPrefetch?.overview_counts;
+      if (prefetchedCounts && !consumedPrefetch.current) {
+        setLeads(prefetchedCounts.warm_leads ?? 0);
+      } else {
+        void loadLeadCount();
+      }
     }
-
-    apiFetch<{ score: number; label: string; breakdown: Record<string, number> }>("/api/dashboard/health-score")
-      .then((d) => { if (!cancelled) setHealthScore(d); })
-      .catch(() => {/* non-critical */});
-
-    apiFetch<{ goals: Record<string, number>; actuals: Record<string, number> }>("/api/settings/goals")
-      .then((d) => { if (!cancelled) setGoalsData(d); })
-      .catch(() => {/* non-critical */});
 
     const usePrefetch =
       overviewPrefetch && !consumedPrefetch.current;
@@ -161,6 +205,15 @@ export default function OverviewSection({
       });
       if (overviewPrefetch.competitor_signal) {
         setCompetitorSignal(overviewPrefetch.competitor_signal);
+      }
+      setHealthScore(overviewPrefetch.health_score ?? null);
+      setGoalsData(overviewPrefetch.goals ?? null);
+      if (canUseStarter) {
+        setDrafts(overviewPrefetch.overview_counts?.drafts_ready ?? 0);
+        setIntel(overviewPrefetch.overview_counts?.market_signals ?? 0);
+      }
+      if (canUsePro) {
+        setLeads(overviewPrefetch.overview_counts?.warm_leads ?? 0);
       }
     } else {
       apiFetch<UsageSummary>("/api/usage").then((u) => {
@@ -186,6 +239,11 @@ export default function OverviewSection({
       }).catch(() => {
         if (!cancelled) setOauthStatus(null);
       });
+
+      if (canUseStarter) {
+        void loadHealthScore();
+        void loadGoals();
+      }
     }
 
     const handleDraftsChanged = () => {
@@ -202,6 +260,32 @@ export default function OverviewSection({
     };
   }, [billing, overviewPrefetch]);
 
+  const channelStatus = platforms.map((platform) => {
+    const canPublishLive =
+      (platform === "linkedin" && oauthStatus?.linkedin) ||
+      (platform === "x_twitter" && oauthStatus?.x_twitter);
+
+    let badgeClass = "bg-apple-bg text-apple-secondary";
+    let badgeLabel = "Generate only";
+
+    if (platform === "linkedin" || platform === "x_twitter") {
+      badgeClass = canPublishLive
+        ? "bg-green-100 text-green-700"
+        : "bg-amber-100 text-amber-700";
+      badgeLabel = canPublishLive ? "Connected" : "Needs connection";
+    }
+
+    return {
+      platform,
+      badgeClass,
+      badgeLabel,
+    };
+  });
+
+  const liveConnectedCount = channelStatus.filter(
+    (channel) => channel.badgeLabel === "Connected",
+  ).length;
+
   const cards = [
     {
       label: "Content drafts",
@@ -211,12 +295,12 @@ export default function OverviewSection({
     {
       label: "Market signals",
       value: starterLocked ? null : intel,
-      sub: starterLocked ? "Starter plan and above" : "items today",
+      sub: starterLocked ? "Starter plan and above" : "in your brief",
     },
     {
       label: "Warm leads",
       value: leadsLocked ? null : leads,
-      sub: leadsLocked ? "Pro plan only" : "detected",
+      sub: leadsLocked ? "Pro plan only" : "in pipeline",
     },
   ];
 
@@ -547,25 +631,44 @@ export default function OverviewSection({
         <div className="mt-4 rounded-apple bg-apple-card p-5 shadow-apple">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Enabled channels</p>
+              <p className="text-sm font-medium">Channel readiness</p>
               <p className="text-sm text-apple-secondary">
-                IntoMarketing generates channel-specific variants for every saved draft pack.
+                Which channels are configured for content generation versus ready for live publishing.
               </p>
             </div>
             <p className="text-sm font-medium text-apple-secondary">
-              {platforms.length} platform{platforms.length === 1 ? "" : "s"}
+              {platforms.length === 0
+                ? "No channels yet"
+                : `${liveConnectedCount}/${platforms.length} live`}
             </p>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {platforms.map((platform) => (
-              <span
-                key={platform}
-                className="rounded-full bg-apple-bg px-3 py-1 text-xs font-medium text-apple-secondary"
-              >
-                {PLATFORM_BY_ID[platform].label}
-              </span>
-            ))}
-          </div>
+          {platforms.length === 0 ? (
+            <div className="mt-3 rounded-apple-sm border border-dashed border-apple-border bg-apple-bg px-4 py-4 text-sm text-apple-secondary">
+              Choose your channels in{" "}
+              <Link href="/settings?tab=platforms" className="text-apple-blue hover:underline">
+                Settings
+              </Link>{" "}
+              to start generating platform-specific drafts.
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {channelStatus.map((channel) => (
+                <div
+                  key={channel.platform}
+                  className="flex items-center justify-between rounded-apple-sm bg-apple-bg px-3 py-2"
+                >
+                  <span className="text-sm font-medium text-apple-text">
+                    {PLATFORM_BY_ID[channel.platform].label}
+                  </span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${channel.badgeClass}`}
+                  >
+                    {channel.badgeLabel}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -56,11 +56,31 @@ async def test_dashboard_bootstrap_returns_all_sections(monkeypatch):
     async def fake_oauth(**kwargs):
         return {"linkedin": False, "x_twitter": False}
 
+    async def fake_health(**kwargs):
+        return {"score": 72, "label": "Good", "breakdown": {"posts": 80}}
+
+    async def fake_goals(**kwargs):
+        return {
+            "goals": {"post_frequency": 12, "lead_volume": 6},
+            "actuals": {"posts_this_month": 4, "leads_this_month": 2},
+        }
+
     monkeypatch.setattr(dashboard_mod, "get_settings", fake_settings)
     monkeypatch.setattr(dashboard_mod, "get_subscription", fake_billing)
     monkeypatch.setattr(dashboard_mod, "get_usage", fake_usage)
     monkeypatch.setattr(dashboard_mod, "pipeline_status", fake_pipeline)
     monkeypatch.setattr(dashboard_mod, "oauth_status", fake_oauth)
+    monkeypatch.setattr(dashboard_mod, "get_health_score", fake_health)
+    monkeypatch.setattr(dashboard_mod, "get_goals", fake_goals)
+    monkeypatch.setattr(
+        dashboard_mod,
+        "count_docs",
+        lambda collection, *args, **kwargs: {
+            "drafts": 7,
+            "intelligence_items": 9,
+            "qualified_leads": 3,
+        }[collection],
+    )
 
     request = MagicMock()
     request.state.tenant_tier = "starter"
@@ -72,3 +92,10 @@ async def test_dashboard_bootstrap_returns_all_sections(monkeypatch):
     assert out["usage"]["tier"] == "starter"
     assert out["pipeline_status"]["has_run_before"] is False
     assert out["oauth_status"]["linkedin"] is False
+    assert out["health_score"]["score"] == 72
+    assert out["goals"]["goals"]["post_frequency"] == 12
+    assert out["overview_counts"] == {
+        "drafts_ready": 7,
+        "market_signals": 9,
+        "warm_leads": 3,
+    }

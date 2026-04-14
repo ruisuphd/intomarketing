@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -132,9 +133,11 @@ export default function LoginPage() {
       <div className="flex flex-col justify-center bg-[var(--color-surface)] border-b border-[var(--color-border-light)] px-6 pb-8 pt-10 lg:flex-1 lg:max-w-[50%] lg:border-b-0 lg:border-r lg:px-12 lg:py-12 lg:pt-16">
         <div className="mx-auto w-full max-w-md">
           <Link href="/" className="inline-flex items-center gap-2.5" aria-label="IntoMarketing by Intonation Labs">
-            <img
+            <Image
               src="/logo.png"
               alt=""
+              width={32}
+              height={32}
               className="h-8 w-8 rounded-lg object-contain"
             />
             <div className="flex flex-col">

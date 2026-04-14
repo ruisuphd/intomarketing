@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
 from api.middleware.auth import require_tenant
-from shared.firestore_client import add_doc, query_docs, get_db
+from shared.firestore_client import get_db
 from shared.models import TenantProfile
 
 router = APIRouter(prefix="/api/push", tags=["push"])

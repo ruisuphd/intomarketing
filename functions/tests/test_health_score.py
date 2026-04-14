@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -89,7 +88,6 @@ async def test_health_score_labels_thresholds(monkeypatch):
     """Verify label assignment at boundary scores."""
     # Good: 60-79
     # Building: 40-59
-    calls = {}
 
     async def score_at(post_count: int) -> dict:
         now = datetime.now(timezone.utc)

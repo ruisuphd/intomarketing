@@ -12,7 +12,6 @@ from shared.firestore_client import (
     query_collection_group,
     query_docs,
     update_doc,
-    update_tenant,
 )
 from shared.logger import get_logger
 from shared.models import PublishingRecord, TenantProfile
@@ -180,7 +179,7 @@ async def run_publisher() -> dict:
                             # Update stored credentials and local reference.
                             existing = profile.platform_credentials.get("x_twitter", {})
                             merged = {**existing.model_dump(), **new_creds} if hasattr(existing, "model_dump") else {**vars(existing), **new_creds}
-                            update_tenant(tenant_id, {f"platform_credentials.x_twitter": merged})
+                            update_tenant(tenant_id, {"platform_credentials.x_twitter": merged})
                             credentials = credentials.model_copy(update={
                                 "access_token": new_creds["access_token"],
                                 "refresh_token": new_creds["refresh_token"],

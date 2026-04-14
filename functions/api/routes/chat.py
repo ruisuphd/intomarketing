@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.middleware.legal import require_legal_acceptance_verified
 from shared.chat_schema import ChatStructuredReply
-from shared.datetime_utils import coerce_datetime
 from shared.errors import RATE_LIMITED, build_error_body
 from shared.usage_limits import check_limit, increment_usage
 from shared.platforms import normalize_platforms
@@ -163,7 +162,6 @@ def _detect_intent(text: str) -> str | None:
 
 def _build_intent_context(intent: str, tenant_id: str) -> str:
     """Fetch live data for the given intent and return a context block for the system prompt."""
-    from datetime import datetime, timedelta, timezone
     try:
         if intent == "show_leads":
             leads = query_docs(
@@ -175,9 +173,9 @@ def _build_intent_context(intent: str, tenant_id: str) -> str:
             if not leads:
                 return "\n\n## Live Lead Data\nNo qualified leads found yet."
             rows = "\n".join(
-                f"- {l.get('company_name') or l.get('company') or 'Unknown'} | "
-                f"score={l.get('score', 0)} | status={l.get('status', 'new')}"
-                for l in leads
+                f"- {lead.get('company_name') or lead.get('company') or 'Unknown'} | "
+                f"score={lead.get('score', 0)} | status={lead.get('status', 'new')}"
+                for lead in leads
             )
             return f"\n\n## Live Lead Data (top 5 by score)\n{rows}"
 

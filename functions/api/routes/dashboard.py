@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
@@ -14,6 +13,7 @@ from api.routes.billing import get_subscription
 from api.routes.oauth import oauth_status
 from api.routes.pipeline import pipeline_status
 from api.routes.settings import get_settings
+from api.routes.settings import get_goals
 from api.routes.usage import get_usage
 from shared.competitor_intel import get_top_competitor_signal
 from shared.datetime_utils import coerce_datetime
@@ -62,8 +62,8 @@ async def get_health_score(
     month_ago = now - timedelta(days=30)
     leads = query_docs("qualified_leads", tenant_id=tid, limit=200)
     recent_leads = sum(
-        1 for l in leads
-        if (coerce_datetime(l.get("qualified_at")) or coerce_datetime(l.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) >= month_ago
+        1 for lead in leads
+        if (coerce_datetime(lead.get("qualified_at")) or coerce_datetime(lead.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) >= month_ago
     )
     leads_score = _clamp(recent_leads * 10, 0, 100)  # 10+ leads = full score
 
@@ -111,13 +111,47 @@ async def dashboard_bootstrap(
     usage_coro = get_usage(request, tenant=tenant)
     pipeline_coro = pipeline_status(tenant=tenant)
     oauth_coro = oauth_status(tenant=tenant)
+    health_coro = get_health_score(tenant=tenant)
+    goals_coro = get_goals(tenant=tenant)
+    draft_count_coro = asyncio.to_thread(
+        count_docs,
+        "drafts",
+        [("status", "==", "draft")],
+        tenant_id=tenant.tenant_id,
+    )
+    intelligence_count_coro = asyncio.to_thread(
+        count_docs,
+        "intelligence_items",
+        tenant_id=tenant.tenant_id,
+    )
+    leads_count_coro = asyncio.to_thread(
+        count_docs,
+        "qualified_leads",
+        tenant_id=tenant.tenant_id,
+    )
 
-    settings, billing, usage, pipeline, oauth = await asyncio.gather(
+    (
+        settings,
+        billing,
+        usage,
+        pipeline,
+        oauth,
+        health_score,
+        goals,
+        draft_count,
+        intelligence_count,
+        leads_count,
+    ) = await asyncio.gather(
         settings_coro,
         billing_coro,
         usage_coro,
         pipeline_coro,
         oauth_coro,
+        health_coro,
+        goals_coro,
+        draft_count_coro,
+        intelligence_count_coro,
+        leads_count_coro,
     )
 
     try:
@@ -132,4 +166,11 @@ async def dashboard_bootstrap(
         "pipeline_status": pipeline,
         "oauth_status": oauth,
         "competitor_signal": competitor_signal,
+        "health_score": health_score,
+        "goals": goals,
+        "overview_counts": {
+            "drafts_ready": draft_count,
+            "market_signals": intelligence_count,
+            "warm_leads": leads_count,
+        },
     }

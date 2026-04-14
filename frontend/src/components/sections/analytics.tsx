@@ -13,6 +13,13 @@ interface AnalyticsSectionProps {
   platforms?: string[];
 }
 
+const METRICS_SOURCE_LABELS: Record<string, string> = {
+  linkedin_api: "LinkedIn API",
+  x_api: "X API",
+  platform_api: "Platform API",
+  placeholder_until_platform_apis: "Placeholder snapshots",
+};
+
 export default function AnalyticsSection({ billing, platforms }: AnalyticsSectionProps) {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +77,13 @@ export default function AnalyticsSection({ billing, platforms }: AnalyticsSectio
     return `${(value * 100).toFixed(1)}%`;
   }
 
+  const lastUpdatedLabel = data?.latest_snapshot_at
+    ? new Date(data.latest_snapshot_at).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : null;
+
   function handleExport() {
     if (!data) return;
     const rows = [
@@ -101,6 +115,11 @@ export default function AnalyticsSection({ billing, platforms }: AnalyticsSectio
           <p className="text-sm text-apple-secondary">
             Performance metrics when live provider data is available; otherwise values may be sample or partial.
           </p>
+          {lastUpdatedLabel && (
+            <p className="mt-1 text-xs text-apple-secondary">
+              Last updated {lastUpdatedLabel}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -175,11 +194,28 @@ export default function AnalyticsSection({ billing, platforms }: AnalyticsSectio
                   Last {data?.series.length || 0} analytics snapshots across {platforms?.length || 0} connected platforms.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs text-apple-secondary">
-                <span className="rounded-full bg-apple-bg px-3 py-1">
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span
+                  className={`rounded-full px-3 py-1 ${
+                    data?.live_metrics_available
+                      ? "bg-green-100 text-green-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {data?.live_metrics_available ? "Live metrics" : "Placeholder snapshots"}
+                </span>
+                {(data?.metrics_sources || []).map((source) => (
+                  <span
+                    key={source}
+                    className="rounded-full bg-apple-bg px-3 py-1 text-apple-secondary"
+                  >
+                    {METRICS_SOURCE_LABELS[source] || source}
+                  </span>
+                ))}
+                <span className="rounded-full bg-apple-bg px-3 py-1 text-apple-secondary">
                   Signals: {data?.summary.signals_detected || 0}
                 </span>
-                <span className="rounded-full bg-apple-bg px-3 py-1">
+                <span className="rounded-full bg-apple-bg px-3 py-1 text-apple-secondary">
                   Outreach sent: {data?.summary.outreach_sent || 0}
                 </span>
               </div>

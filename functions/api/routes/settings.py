@@ -212,8 +212,8 @@ async def get_goals(tenant: TenantProfile = Depends(require_tenant)):
 
     leads = query_docs("qualified_leads", tenant_id=tenant.tenant_id, limit=200)
     leads_this_month = sum(
-        1 for l in leads
-        if (coerce_datetime(l.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) >= month_start
+        1 for lead in leads
+        if (coerce_datetime(lead.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)) >= month_start
     )
 
     return {

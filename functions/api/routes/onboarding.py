@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 from api.middleware.auth import get_current_user, require_access
 from api.middleware.legal import ensure_legal_acceptance, require_legal_acceptance

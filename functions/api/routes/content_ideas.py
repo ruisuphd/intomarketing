@@ -10,7 +10,7 @@ from google.cloud import firestore
 from pydantic import BaseModel, field_validator
 
 from api.middleware.legal import require_access_with_legal
-from shared.firestore_client import get_db, get_tenant, update_tenant
+from shared.firestore_client import get_tenant, update_tenant
 from shared.models import TenantProfile
 
 router = APIRouter(prefix="/api/content-ideas", tags=["content-ideas"])

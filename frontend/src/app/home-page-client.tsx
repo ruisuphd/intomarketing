@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -61,9 +62,11 @@ export default function HomePageClient() {
       <header className="sticky top-0 z-50 border-b border-apple-border bg-apple-card/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label="IntoMarketing by Intonation Labs">
-            <img
+            <Image
               src="/logo.png"
               alt=""
+              width={32}
+              height={32}
               className="h-8 w-8 rounded-lg object-contain"
             />
             <div className="flex flex-col">

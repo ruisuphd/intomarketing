@@ -50,6 +50,14 @@ async def get_analytics(
     series: list[dict] = []
     total_impressions = 0
     avg_open_rate_values: list[float] = []
+    metrics_sources = sorted(
+        {
+            str(snapshot.get("metrics_source"))
+            for snapshot in snapshot_docs
+            if snapshot.get("metrics_source")
+        }
+    )
+    latest_snapshot_at = None
 
     for snapshot in reversed(snapshot_docs):
         post_metrics = snapshot.get("post_metrics") or []
@@ -58,6 +66,10 @@ async def get_analytics(
             coerce_datetime(snapshot.get("measured_at"))
             or coerce_datetime(snapshot.get("id"))
             or datetime.now(timezone.utc)
+        )
+        latest_snapshot_at = max(
+            latest_snapshot_at or measured_at,
+            measured_at,
         )
 
         impressions = sum(_safe_int(item.get("impressions")) for item in post_metrics)
@@ -124,4 +136,8 @@ async def get_analytics(
         },
         "series": series,
         "live_metrics_available": live_metrics_available,
+        "latest_snapshot_at": latest_snapshot_at.isoformat()
+        if latest_snapshot_at
+        else None,
+        "metrics_sources": metrics_sources,
     }
