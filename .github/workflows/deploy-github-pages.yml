@@ -59,10 +59,11 @@ jobs:
           fi
 
       - name: Install and build portfolio export
+        # Do not set NODE_ENV=production before `npm ci`: it omits devDependencies
+        # (tailwindcss, typescript, etc.) and breaks `next build`.
         working-directory: frontend
         env:
           STATIC_EXPORT: "1"
-          NODE_ENV: production
           NEXT_PUBLIC_SITE_URL: ${{ steps.meta.outputs.site_url }}
           NEXT_PUBLIC_BASE_PATH: ${{ steps.meta.outputs.base_path_seg }}
           NEXT_PUBLIC_API_URL: https://portfolio-archived.invalid
