@@ -1,13 +1,7 @@
 name: Terraform
 
 on:
-  pull_request:
-    paths:
-      - "infra/**"
-  push:
-    branches: [main]
-    paths:
-      - "infra/**"
+  workflow_dispatch:
 
 jobs:
   terraform:

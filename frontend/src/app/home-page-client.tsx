@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { getAssetPath } from "@/lib/site-url";
 
 const FEATURES = [
   {
@@ -63,7 +64,7 @@ export default function HomePageClient() {
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label="IntoMarketing by Intonation Labs">
             <Image
-              src="/logo.png"
+              src={getAssetPath("/logo.png")}
               alt=""
               width={32}
               height={32}

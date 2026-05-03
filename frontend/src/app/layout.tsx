@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
 import CookieConsentBanner from "@/components/cookie-consent";
-import { getSiteUrl } from "@/lib/site-url";
+import { getAssetPath, getSiteUrl } from "@/lib/site-url";
 import { APP_NAME } from "@/lib/brand";
 import "./globals.css";
 
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: `%s — ${APP_NAME}`,
   },
   description: APP_DESCRIPTION,
-  manifest: "/manifest.json",
+  manifest: getAssetPath("/manifest.json"),
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -31,12 +31,12 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.png", type: "image/png" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: getAssetPath("/favicon.png"), type: "image/png" },
+      { url: getAssetPath("/icon-192.png"), sizes: "192x192", type: "image/png" },
+      { url: getAssetPath("/icon-512.png"), sizes: "512x512", type: "image/png" },
     ],
-    apple: "/icon-192.png",
-    shortcut: "/favicon.png",
+    apple: getAssetPath("/icon-192.png"),
+    shortcut: getAssetPath("/favicon.png"),
   },
   openGraph: {
     title: APP_TITLE,
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     locale: "en",
     images: [
       {
-        url: "/og-default.png",
+        url: `${siteUrl}/og-default.png`,
         width: 1200,
         height: 630,
         alt: APP_NAME,
@@ -57,7 +57,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: APP_TITLE,
     description: APP_DESCRIPTION,
-    images: ["/og-default.png"],
+    images: [`${siteUrl}/og-default.png`],
   },
 };
 

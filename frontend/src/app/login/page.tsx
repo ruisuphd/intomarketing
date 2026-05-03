@@ -13,6 +13,7 @@ import {
   verifyEmail,
 } from "@/lib/firebase";
 import { openCookiePreferences } from "@/lib/cookie-consent-storage";
+import { getAssetPath } from "@/lib/site-url";
 
 const VALUE_POINTS = [
   {
@@ -134,7 +135,7 @@ export default function LoginPage() {
         <div className="mx-auto w-full max-w-md">
           <Link href="/" className="inline-flex items-center gap-2.5" aria-label="IntoMarketing by Intonation Labs">
             <Image
-              src="/logo.png"
+              src={getAssetPath("/logo.png")}
               alt=""
               width={32}
               height={32}
