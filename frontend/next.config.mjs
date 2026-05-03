@@ -3,6 +3,15 @@ import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const isProduction = process.env.NODE_ENV === "production";
+/** Static HTML `out/` export for hosts like GitHub Pages (see `npm run build:portfolio`). */
+const isStaticPortfolio = process.env.STATIC_EXPORT === "1";
+
+function normalizedBasePath() {
+  const raw = process.env.NEXT_PUBLIC_BASE_PATH?.trim() ?? "";
+  if (!raw) return "";
+  return `/${raw.replace(/^\/+|\/+$/g, "")}`;
+}
+const configuredBasePath = normalizedBasePath();
 
 if (isProduction && !process.env.NEXT_PUBLIC_API_URL?.trim()) {
   throw new Error(
@@ -33,7 +42,7 @@ function pwaRevision() {
 const withSerwist = withSerwistInit({
   swSrc: "src/app/sw.ts",
   swDest: "public/sw.js",
-  disable: !isProduction,
+  disable: !isProduction || isStaticPortfolio,
   additionalPrecacheEntries: [{ url: "/~offline", revision: pwaRevision() }],
 });
 
@@ -90,7 +99,10 @@ if (isProduction) {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  ...(isStaticPortfolio
+    ? { output: "export", images: { unoptimized: true } }
+    : { output: "standalone" }),
+  ...(configuredBasePath ? { basePath: configuredBasePath } : {}),
   async headers() {
     return [
       {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiChatStream, ApiError } from "@/lib/api";
+import { getAssetPath } from "@/lib/site-url";
 
 interface Message {
   role: "user" | "assistant";
@@ -213,7 +214,7 @@ export default function ChatWidget() {
         >
           {/* Header */}
           <div className="flex items-center gap-3 rounded-t-apple border-b border-apple-border bg-apple-card px-4 py-3">
-            <img src="/logo.png" alt="IntoMarketing" className="h-8 w-8 rounded-full object-contain border border-apple-border bg-white" />
+            <img src={getAssetPath("/logo.png")} alt="IntoMarketing" className="h-8 w-8 rounded-full object-contain border border-apple-border bg-white" />
             <div>
               <p className="text-sm font-semibold">IntoMarketing Assistant</p>
               <p className="text-xs text-apple-secondary">Powered by Gemini</p>

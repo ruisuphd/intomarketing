@@ -7,3 +7,13 @@ export function getSiteUrl(): string {
   if (raw) return raw.replace(/\/$/, "");
   return "http://localhost:3000";
 }
+
+export function getBasePath(): string {
+  const raw = process.env.NEXT_PUBLIC_BASE_PATH?.trim();
+  if (!raw) return "";
+  return `/${raw.replace(/^\/+|\/+$/g, "")}`;
+}
+
+export function getAssetPath(path: `/${string}`): string {
+  return `${getBasePath()}${path}`;
+}
