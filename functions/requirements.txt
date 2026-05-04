@@ -1,6 +1,6 @@
 functions-framework==3.*
 fastapi==0.135.*
-uvicorn[standard]==0.34.*
+uvicorn[standard]==0.46.*
 httpx==0.28.*
 firebase-admin==6.*
 google-cloud-firestore==2.*
